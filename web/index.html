@@ -1,0 +1,819 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GameBoy HiFi - config</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg:        oklch(0.17 0.015 285);
+    --surface:   oklch(0.215 0.018 285);
+    --control:   oklch(0.265 0.02 285);
+    --border:    oklch(0.32 0.02 285);
+    --border-bright: oklch(0.42 0.03 285);
+    --ink:       oklch(0.97 0.006 285);
+    --muted:     oklch(0.76 0.02 285);
+    --faint:     oklch(0.62 0.02 285);
+    --accent:    oklch(0.66 0.17 286);
+    --accent-bright: oklch(0.72 0.17 286);
+    --accent-ink: oklch(0.99 0 0);
+    --ok:        oklch(0.80 0.15 155);
+    --ok-dim:    oklch(0.50 0.10 155);
+    --warn:      oklch(0.82 0.13 80);
+    --danger:    oklch(0.70 0.18 22);
+
+    --r-sm: 8px; --r-md: 12px; --r-lg: 18px;
+    --ease: cubic-bezier(0.22, 1, 0.36, 1);
+    --z-header: 10;
+
+    font-synthesis: none;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-tap-highlight-color: transparent; }
+  body {
+    font: 400 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: var(--ink);
+    background:
+      radial-gradient(120% 80% at 50% -10%, oklch(0.26 0.05 286 / 0.45), transparent 60%),
+      var(--bg);
+    background-attachment: fixed;
+    margin: 0;
+    min-height: 100dvh;
+  }
+
+  .wrap { max-width: 33rem; margin: 0 auto; padding: 0 1rem 4rem; }
+
+  /* ---- header ---- */
+  header {
+    position: sticky; top: 0; z-index: var(--z-header);
+    display: flex; align-items: center; gap: .75rem;
+    padding: .85rem 0 .8rem;
+    margin-bottom: .5rem;
+    background: linear-gradient(var(--bg) 65%, transparent);
+    backdrop-filter: blur(6px);
+  }
+  .mark {
+    flex: 0 0 auto;
+    display: grid; place-items: center;
+    width: 2.1rem; height: 2.1rem; border-radius: var(--r-sm);
+    background: linear-gradient(145deg, var(--accent), oklch(0.52 0.16 296));
+    color: var(--accent-ink);
+    font-weight: 700; font-size: .82rem; letter-spacing: -.02em;
+    box-shadow: 0 1px 0 oklch(1 0 0 / .15) inset, 0 6px 16px oklch(0.45 0.18 286 / .35);
+  }
+  .title { flex: 1 1 auto; min-width: 0; }
+  .title h1 { font-size: 1.18rem; font-weight: 650; letter-spacing: -.015em; margin: 0; line-height: 1.1; }
+  .title p { margin: 0; font-size: .8rem; color: var(--faint); }
+
+  /* ---- status pill ---- */
+  .pill {
+    flex: 0 0 auto;
+    display: inline-flex; align-items: center; gap: .45rem;
+    padding: .34rem .7rem .34rem .6rem;
+    border-radius: 999px; font-size: .78rem; font-weight: 550;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--muted);
+    transition: color .2s, border-color .2s, background .2s;
+  }
+  .dot { width: .5rem; height: .5rem; border-radius: 50%; background: var(--faint);
+         transition: background .2s, box-shadow .2s; flex: 0 0 auto; }
+  .pill[data-state="connected"] { color: var(--ok); border-color: var(--ok-dim); background: oklch(0.42 0.08 155 / .18); }
+  .pill[data-state="connected"] .dot { background: var(--ok); box-shadow: 0 0 0 3px oklch(0.80 0.15 155 / .22); }
+  .pill[data-state="connecting"] { color: var(--warn); border-color: oklch(0.55 0.10 80); }
+  .pill[data-state="connecting"] .dot { background: var(--warn); animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+
+  /* ---- connect screen ---- */
+  .connect-card {
+    text-align: center;
+    padding: 2.4rem 1.5rem 2rem;
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    background:
+      radial-gradient(90% 60% at 50% 0%, oklch(0.30 0.06 286 / .5), transparent 70%),
+      var(--surface);
+  }
+  .connect-card .glyph {
+    width: 3.5rem; height: 3.5rem; margin: 0 auto 1.1rem;
+    display: grid; place-items: center; border-radius: var(--r-md);
+    background: var(--control); border: 1px solid var(--border-bright);
+    color: var(--accent-bright);
+  }
+  .connect-card h2 { font-size: 1.45rem; font-weight: 650; letter-spacing: -.02em; margin: 0 0 .4rem;
+                     text-wrap: balance; }
+  .connect-card p { color: var(--muted); margin: 0 auto 1.5rem; max-width: 24rem; font-size: .95rem; }
+  .connect-card .req { margin-top: 1.4rem; font-size: .8rem; color: var(--faint); line-height: 1.7; }
+  .connect-card .req b { color: var(--muted); font-weight: 550; }
+
+  /* ---- buttons ---- */
+  button {
+    font: inherit; font-weight: 550; font-size: .95rem;
+    padding: .6rem 1rem; border-radius: var(--r-sm); cursor: pointer;
+    border: 1px solid var(--border-bright); background: var(--control); color: var(--ink);
+    transition: background .15s, border-color .15s, transform .08s, box-shadow .15s;
+  }
+  button:hover { border-color: var(--faint); background: oklch(0.30 0.02 285); }
+  button:active { transform: translateY(1px); }
+  button:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 2px; }
+  button:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+  .btn-primary {
+    border-color: transparent; color: var(--accent-ink);
+    background: linear-gradient(145deg, var(--accent-bright), var(--accent));
+    box-shadow: 0 1px 0 oklch(1 0 0 / .18) inset, 0 6px 18px oklch(0.45 0.18 286 / .3);
+  }
+  .btn-primary:hover { background: linear-gradient(145deg, oklch(0.76 0.17 286), var(--accent-bright)); }
+  .btn-lg { padding: .8rem 1.6rem; font-size: 1.02rem; border-radius: var(--r-md); }
+  .btn-ghost { background: transparent; border-color: var(--border); color: var(--muted); }
+  .btn-ghost:hover { color: var(--ink); border-color: var(--faint); background: var(--surface); }
+
+  /* ---- panel + sections ---- */
+  #panel { border: 0; padding: 0; margin: 0; min-width: 0; }
+  #panel[hidden] { display: none; }
+  .panel-in > * { animation: rise .5s var(--ease) backwards; }
+  .panel-in > *:nth-child(2) { animation-delay: .04s; }
+  .panel-in > *:nth-child(3) { animation-delay: .08s; }
+  .panel-in > *:nth-child(4) { animation-delay: .12s; }
+  .panel-in > *:nth-child(5) { animation-delay: .16s; }
+  .panel-in > *:nth-child(6) { animation-delay: .2s; }
+  @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+  section.group {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    padding: .35rem 1rem 1rem;
+    margin-bottom: .85rem;
+  }
+  .group-head {
+    display: flex; align-items: center; gap: .6rem;
+    padding: .7rem .15rem .6rem;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: .85rem;
+  }
+  .group-head h2 { font-size: 1rem; font-weight: 600; letter-spacing: -.01em; margin: 0; flex: 1 1 auto; }
+  .group-head .hint { font-size: .78rem; color: var(--faint); font-weight: 400; }
+
+  /* ---- controls ---- */
+  .ctl { margin: .9rem .15rem; }
+  .ctl-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: .45rem; }
+  .ctl-head label { font-size: .92rem; color: var(--ink); }
+  .ctl-head output { font-size: .9rem; font-variant-numeric: tabular-nums; color: var(--accent-bright); font-weight: 600; }
+
+  input[type=range] {
+    -webkit-appearance: none; appearance: none; width: 100%; height: 1.5rem; margin: 0;
+    background: transparent; cursor: pointer;
+  }
+  input[type=range]::-webkit-slider-runnable-track { height: 6px; border-radius: 999px;
+    background: var(--control); border: 1px solid var(--border); }
+  input[type=range]::-moz-range-track { height: 6px; border-radius: 999px;
+    background: var(--control); border: 1px solid var(--border); }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none;
+    width: 1.15rem; height: 1.15rem; border-radius: 50%; margin-top: calc(-.575rem + 3px);
+    background: var(--ink); border: 3px solid var(--accent); box-shadow: 0 1px 4px oklch(0 0 0 / .4);
+    transition: transform .1s; }
+  input[type=range]::-moz-range-thumb { width: 1.15rem; height: 1.15rem; border-radius: 50%;
+    background: var(--ink); border: 3px solid var(--accent); box-shadow: 0 1px 4px oklch(0 0 0 / .4); }
+  input[type=range]:active::-webkit-slider-thumb { transform: scale(1.12); }
+  input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px oklch(0.66 0.17 286 / .35); }
+
+  /* toggle switch (native checkbox, restyled) */
+  .ctl-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin: .85rem .15rem; }
+  .ctl-row label { font-size: .92rem; color: var(--ink); }
+  .ctl-row .sub { font-size: .78rem; color: var(--faint); display: block; }
+  input.sw { -webkit-appearance: none; appearance: none; flex: 0 0 auto; cursor: pointer;
+    width: 2.65rem; height: 1.55rem; border-radius: 999px; margin: 0; position: relative;
+    background: var(--control); border: 1px solid var(--border-bright); transition: background .2s, border-color .2s; }
+  input.sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 1.2rem; height: 1.2rem;
+    border-radius: 50%; background: var(--muted); transition: transform .2s var(--ease), background .2s; }
+  input.sw:checked { background: var(--accent); border-color: transparent; }
+  input.sw:checked::after { transform: translateX(1.1rem); background: var(--accent-ink); }
+  input.sw:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 2px; }
+
+  input[type=number] { font: inherit; font-size: .92rem; font-variant-numeric: tabular-nums;
+    width: 5.5rem; padding: .45rem .6rem; text-align: right;
+    background: var(--control); color: var(--ink); border: 1px solid var(--border-bright); border-radius: var(--r-sm); }
+  input[type=number]:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 1px; border-color: transparent; }
+  input[type=text] { font: inherit; font-size: .92rem; flex: 1 1 auto; min-width: 0; padding: .55rem .7rem;
+    background: var(--control); color: var(--ink); border: 1px solid var(--border-bright); border-radius: var(--r-sm); }
+  input[type=text]:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 1px; border-color: transparent; }
+
+  /* mode status row */
+  .mode-status { display: flex; align-items: center; gap: .55rem; font-weight: 600; font-size: .95rem; }
+  .mode-status .dot { width: .55rem; height: .55rem; }
+  .mode-status[data-mode="A"] { color: var(--warn); }
+  .mode-status[data-mode="A"] .dot { background: var(--warn); }
+  .mode-status[data-mode="B"] { color: var(--ok); }
+  .mode-status[data-mode="B"] .dot { background: var(--ok); }
+  .note { font-size: .82rem; color: var(--muted); margin: .2rem .15rem .1rem; line-height: 1.5; }
+  .note b { color: var(--ink); font-weight: 600; }
+
+  .chime-row { display: flex; flex-wrap: wrap; gap: .4rem; margin: .3rem .15rem; }
+  .chime-row button { padding: .45rem .8rem; font-size: .85rem; }
+  .clip-row { display: flex; gap: .5rem; margin: .9rem .15rem .2rem; }
+  .save-row { display: flex; align-items: center; gap: .8rem; margin: .3rem .15rem; }
+  .save-row .saved { font-size: .85rem; color: var(--ok); opacity: 0; transition: opacity .2s; }
+  .save-row .saved.show { opacity: 1; }
+
+  /* ---- activity log ---- */
+  details.activity { margin-top: 1.2rem; }
+  details.activity summary { font-size: .8rem; color: var(--faint); cursor: pointer; padding: .3rem 0;
+    list-style: none; user-select: none; }
+  details.activity summary::-webkit-details-marker { display: none; }
+  details.activity summary::before { content: "> "; transition: none; }
+  details.activity[open] summary::before { content: "v "; }
+  #log { white-space: pre-wrap; background: oklch(0.13 0.012 285); border: 1px solid var(--border);
+    border-radius: var(--r-sm); padding: .55rem .7rem; margin-top: .4rem; max-height: 9rem; overflow: auto;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11.5px; line-height: 1.6; color: var(--muted); }
+  #log:empty { display: none; }
+  .ok-t { color: var(--ok); } .err-t { color: var(--danger); } .dim-t { color: var(--faint); }
+
+  /* a global error banner for the big stuff (no Bluetooth, etc.) */
+  #banner { display: none; margin: .6rem 0 0; padding: .7rem .9rem; border-radius: var(--r-sm);
+    font-size: .88rem; background: oklch(0.32 0.10 22 / .25); border: 1px solid var(--danger); color: oklch(0.88 0.06 22); }
+  #banner.show { display: block; }
+
+  /* ---- firmware update (OTA) ---- */
+  .drop { display: grid; place-items: center; text-align: center; gap: .25rem;
+    padding: 1.15rem 1rem; margin: .3rem .15rem;
+    border: 1.5px dashed var(--border-bright); border-radius: var(--r-md);
+    color: var(--muted); font-size: .88rem; cursor: pointer;
+    transition: border-color .15s, background .15s, color .15s; }
+  .drop:hover { border-color: var(--faint); color: var(--ink); }
+  .drop.over { border-color: var(--accent-bright); color: var(--ink);
+    background: oklch(0.30 0.06 286 / .3); }
+  .drop b { color: var(--ink); font-weight: 600; }
+  .drop input { display: none; }
+  .bar { height: .55rem; border-radius: 999px; background: var(--control);
+    border: 1px solid var(--border); overflow: hidden; margin: .7rem .15rem .45rem; }
+  /* fill scales via transform (GPU-composited, no layout thrash); it updates on
+     every OTA ack, so a width animation would be janky. Clipped by .bar's rounded
+     overflow, so scaleX needs no radius of its own. */
+  .bar > i { display: block; height: 100%; width: 100%; transform: scaleX(0);
+    transform-origin: left center;
+    background: linear-gradient(90deg, var(--accent), var(--accent-bright));
+    transition: transform .2s var(--ease); }
+  .fw-status { display: flex; justify-content: space-between; gap: 1rem;
+    font-size: .82rem; color: var(--muted); margin: 0 .15rem; min-height: 1.2em; }
+  .fw-status .rate { font-variant-numeric: tabular-nums; color: var(--faint); flex: 0 0 auto; }
+
+  @media (max-width: 380px) {
+    .title p { display: none; }
+    .pill .label { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::after { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="mark" aria-hidden="true">BT</div>
+    <div class="title">
+      <h1>GameBoy HiFi</h1>
+      <p>Bluetooth sound control</p>
+    </div>
+    <span class="pill" id="status" data-state="disconnected" role="status" aria-live="polite">
+      <span class="dot"></span><span class="label">Not connected</span>
+    </span>
+  </header>
+
+  <div id="banner"></div>
+
+  <!-- Disconnected: connect screen -->
+  <div id="connectView">
+    <div class="connect-card">
+      <div class="glyph" aria-hidden="true">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M7 7l10 10M17 7L7 17"/><path d="M12 2v6M12 16v6"/><circle cx="12" cy="12" r="2.2"/>
+        </svg>
+      </div>
+      <h2>Connect your audio mod</h2>
+      <p>Pair over Bluetooth to adjust volume, tone, and sound effects. Your settings can be saved to the
+        device so they stick after a power cycle.</p>
+      <button id="connect" class="btn-primary btn-lg">Connect over Bluetooth</button>
+      <div class="req">
+        Use <b>Chrome</b> or <b>Edge</b> on desktop or Android.<br>
+        Turn on the mod first, then pick <b>GameBoy HiFi Setup</b> when prompted.
+      </div>
+    </div>
+  </div>
+
+  <!-- Connected: control panel -->
+  <fieldset id="panel" hidden>
+
+    <section class="group">
+      <div class="group-head"><h2>Volume</h2></div>
+      <div class="ctl">
+        <div class="ctl-head"><label for="spkVol">Speaker</label><output id="spkVolO"></output></div>
+        <input type="range" id="spkVol" min="0" max="100">
+      </div>
+      <div class="ctl">
+        <div class="ctl-head"><label for="btVol">Bluetooth</label><output id="btVolO"></output></div>
+        <input type="range" id="btVol" min="0" max="100">
+      </div>
+    </section>
+
+    <section class="group">
+      <div class="group-head"><h2>Speaker tone</h2><span class="hint">EQ</span><input type="checkbox" class="sw" id="eqEn" aria-label="Enable speaker EQ"></div>
+      <div class="ctl">
+        <div class="ctl-head"><label for="eqBass">Bass</label><output id="eqBassO"></output></div>
+        <input type="range" id="eqBass" min="-12" max="12">
+      </div>
+      <div class="ctl">
+        <div class="ctl-head"><label for="eqMid">Mid</label><output id="eqMidO"></output></div>
+        <input type="range" id="eqMid" min="-12" max="12">
+      </div>
+      <div class="ctl">
+        <div class="ctl-head"><label for="eqTreble">Treble</label><output id="eqTrebleO"></output></div>
+        <input type="range" id="eqTreble" min="-12" max="12">
+      </div>
+    </section>
+
+    <section class="group">
+      <div class="group-head"><h2>Headphone tone</h2><span class="hint">wired</span><input type="checkbox" class="sw" id="eqHpEn" aria-label="Enable headphone EQ"></div>
+      <p class="note">Applies only while wired headphones are plugged in. Off and flat by default;
+        turn it on to dial in your headphones.</p>
+      <div class="ctl">
+        <div class="ctl-head"><label for="eqHpBass">Bass</label><output id="eqHpBassO"></output></div>
+        <input type="range" id="eqHpBass" min="-12" max="12">
+      </div>
+      <div class="ctl">
+        <div class="ctl-head"><label for="eqHpMid">Mid</label><output id="eqHpMidO"></output></div>
+        <input type="range" id="eqHpMid" min="-12" max="12">
+      </div>
+      <div class="ctl">
+        <div class="ctl-head"><label for="eqHpTreble">Treble</label><output id="eqHpTrebleO"></output></div>
+        <input type="range" id="eqHpTreble" min="-12" max="12">
+      </div>
+    </section>
+
+    <section class="group">
+      <div class="group-head"><h2>Bluetooth tone</h2><span class="hint">EQ</span><input type="checkbox" class="sw" id="eqBtEn" aria-label="Enable Bluetooth EQ"></div>
+      <div class="ctl">
+        <div class="ctl-head"><label for="eqBtBass">Bass</label><output id="eqBtBassO"></output></div>
+        <input type="range" id="eqBtBass" min="-12" max="12">
+      </div>
+      <div class="ctl">
+        <div class="ctl-head"><label for="eqBtMid">Mid</label><output id="eqBtMidO"></output></div>
+        <input type="range" id="eqBtMid" min="-12" max="12">
+      </div>
+      <div class="ctl">
+        <div class="ctl-head"><label for="eqBtTreble">Treble</label><output id="eqBtTrebleO"></output></div>
+        <input type="range" id="eqBtTreble" min="-12" max="12">
+      </div>
+    </section>
+
+    <section class="group">
+      <div class="group-head"><h2>Sound cues</h2><input type="checkbox" class="sw" id="sfxEn" aria-label="Enable sound cues"></div>
+      <div class="ctl">
+        <div class="ctl-head"><label for="sfxLevel">Cue volume</label><output id="sfxLevelO"></output></div>
+        <input type="range" id="sfxLevel" min="-24" max="6">
+      </div>
+    </section>
+
+    <section class="group">
+      <div class="group-head"><h2>Mode</h2></div>
+      <div class="ctl-row">
+        <label>Current mode</label>
+        <span class="mode-status" id="modeStatusPill" data-mode="B"><span class="dot"></span><span id="modeStatus">-</span></span>
+      </div>
+      <p class="note">Switch between <b>Full mode</b> (all the sound processing) and <b>Battery saver</b>
+        (low power, longer playtime) by holding the <b>R button</b> on the console until the third chime,
+        then releasing. This page can't switch it, because battery saver puts the radio to sleep.</p>
+      <div class="ctl-row" style="margin-top:1rem">
+        <label>Switch to Full mode when headphones are unplugged
+          <span class="sub">Otherwise the speaker stays in battery saver</span></label>
+        <input type="checkbox" class="sw" id="unplugToB" aria-label="Switch to Full mode on unplug">
+      </div>
+    </section>
+
+    <section class="group">
+      <div class="group-head"><h2>R-button hold menu</h2><span class="hint">milliseconds</span></div>
+      <p class="note">Hold the console's <b>R button</b>; it chimes as the hold passes each step. Release on the
+        chime you want. Raise these if R gets bumped during play.</p>
+      <div class="ctl-row"><label for="holdConnect">Reconnect</label><input type="number" id="holdConnect" min="500" max="15000" step="100"></div>
+      <div class="ctl-row"><label for="holdPair">Pair new device</label><input type="number" id="holdPair" min="500" max="15000" step="100"></div>
+      <div class="ctl-row"><label for="holdMode">Switch mode</label><input type="number" id="holdMode" min="500" max="15000" step="100"></div>
+      <div class="ctl-row"><label for="holdExit">Leave battery saver</label><input type="number" id="holdExit" min="500" max="15000" step="100"></div>
+    </section>
+
+    <section class="group">
+      <div class="group-head"><h2>Test &amp; save</h2></div>
+      <p class="note">Play a chime to check the speaker, or play an uploaded clip by name.</p>
+      <div class="chime-row">
+        <button data-chime="0">Pairing</button>
+        <button data-chime="1">Connect</button>
+        <button data-chime="2">Disconnect</button>
+        <button data-chime="3">Rebond</button>
+        <button data-chime="4">Mode</button>
+      </div>
+      <div class="clip-row">
+        <input type="text" id="clipName" placeholder="clip name" value="startup">
+        <button id="play">Play clip</button>
+      </div>
+      <div class="save-row" style="margin-top:1.1rem">
+        <button id="save" class="btn-primary">Save to device</button>
+        <button id="disconnect" class="btn-ghost">Disconnect</button>
+        <span class="saved" id="savedMsg">Saved</span>
+      </div>
+    </section>
+
+    <section class="group">
+      <div class="group-head"><h2>Firmware update</h2><span class="hint" id="fwRunning">-</span></div>
+      <p class="note" id="fwInstalled">Installed firmware: -</p>
+      <p class="note">Update the mod over Bluetooth. Get the latest <b>firmware.bin</b>, drop it below, and
+        keep this page open until the device reboots. <b>Audio pauses</b> during the update (~1-2 min).</p>
+      <label class="drop" id="fwDrop">
+        <input type="file" id="fwFile" accept=".bin,application/octet-stream">
+        <span id="fwHint">Tap to choose a <b>.bin</b> file, or drop it here</span>
+      </label>
+      <div class="bar" id="fwBarWrap" hidden><i id="fwBar"></i></div>
+      <div class="fw-status"><span id="fwStatus"></span><span class="rate" id="fwRate"></span></div>
+      <div class="save-row" style="margin-top:1rem">
+        <button id="fwFlash" class="btn-primary" disabled>Flash firmware</button>
+        <button id="fwAbort" class="btn-ghost" disabled>Cancel</button>
+      </div>
+    </section>
+
+    <details class="activity">
+      <summary>Activity log</summary>
+      <div id="log"></div>
+    </details>
+
+  </fieldset>
+</div>
+
+<script>
+const SVC      = '5a4d0000-1f2e-4c6b-9a8f-0102030405aa';
+const SETTINGS = '5a4d0001-1f2e-4c6b-9a8f-0102030405aa';
+const ACTION   = '5a4d0002-1f2e-4c6b-9a8f-0102030405aa';
+const OTACTL   = '5a4d0003-1f2e-4c6b-9a8f-0102030405aa';  // write + notify (OTA control/status)
+const OTADATA  = '5a4d0004-1f2e-4c6b-9a8f-0102030405aa';  // write-no-response (OTA chunks)
+const WIRE_LEN = 28;
+const VERSION  = 6;
+// OTA opcodes/status, must match the firmware BLE config.
+const OTA = { BEGIN:0x01, END:0x02, ABORT:0x03, GET_INFO:0x04,
+              READY:0x10, ACK:0x11, DONE:0x12, INFO:0x13, ERROR:0x1f };
+
+let device, settingsChr, actionChr, otaCtlChr, otaDataChr;
+let otaImage = null;   // ArrayBuffer of the chosen .bin
+let ota = null;        // active transfer state
+let suppress = false;     // ignore control 'input' events while populating from the device
+let lastModeA = 0;        // read-only mode_a byte, preserved on write-back (firmware ignores it)
+
+const $ = (id) => document.getElementById(id);
+const logEl = $('log');
+const log = (m, cls='') => {
+  logEl.innerHTML += `<span class="${cls}">[${new Date().toLocaleTimeString()}] ${m}</span>\n`;
+  logEl.scrollTop = logEl.scrollHeight;
+};
+const banner = (m) => { const b = $('banner'); b.textContent = m; b.classList.add('show'); };
+
+// ---- wire <-> controls ----
+// Settings blob, little-endian, byte offsets:
+//   [0..1] version u16 [2] spkVol [3] btVol [4] eqEn [5..7] eq i8 x3
+//   [8] eqBtEn [9..11] eqBt i8 x3 [12] sfxEn [13] sfxLevel i8
+//   [14] modeA (read-only status) [15] unplugToB
+//   [16..17] holdConnect u16 [18..19] holdPair u16 [20..21] holdMode u16 [22..23] holdExit u16
+//   [24] eqHpEn [25..27] eqHp i8 x3 (headphone EQ)
+const FIELDS = [   // writable u8 ('u') / i8 ('i') / bool ('b')
+  ['spkVol',2,'u'], ['btVol',3,'u'],
+  ['eqEn',4,'b'], ['eqBass',5,'i'], ['eqMid',6,'i'], ['eqTreble',7,'i'],
+  ['eqHpEn',24,'b'], ['eqHpBass',25,'i'], ['eqHpMid',26,'i'], ['eqHpTreble',27,'i'],
+  ['eqBtEn',8,'b'], ['eqBtBass',9,'i'], ['eqBtMid',10,'i'], ['eqBtTreble',11,'i'],
+  ['sfxEn',12,'b'], ['sfxLevel',13,'i'],
+  ['unplugToB',15,'b'],
+];
+const HOLD_FIELDS = [   // writable u16 ('h')
+  ['holdConnect',16], ['holdPair',18], ['holdMode',20], ['holdExit',22],
+];
+
+function decodeToControls(dv) {
+  clearTimeout(wTimer);   // a fresh device value supersedes any queued write
+  suppress = true;
+  for (const [id, off, kind] of FIELDS) {
+    const el = $(id);
+    if (kind === 'b') el.checked = dv.getUint8(off) !== 0;
+    else el.value = (kind === 'i') ? dv.getInt8(off) : dv.getUint8(off);
+  }
+  for (const [id, off] of HOLD_FIELDS) $(id).value = dv.getUint16(off, true);
+  lastModeA = dv.getUint8(14);
+  $('modeStatus').textContent = lastModeA ? 'Battery saver' : 'Full mode';
+  $('modeStatusPill').dataset.mode = lastModeA ? 'A' : 'B';
+  syncOutputs();
+  suppress = false;
+}
+
+function encodeFromControls() {
+  const buf = new ArrayBuffer(WIRE_LEN);
+  const dv = new DataView(buf);
+  dv.setUint16(0, VERSION, true);                 // version (informational)
+  for (const [id, off, kind] of FIELDS) {
+    const el = $(id);
+    if (kind === 'b') dv.setUint8(off, el.checked ? 1 : 0);
+    else if (kind === 'i') dv.setInt8(off, parseInt(el.value));
+    else dv.setUint8(off, parseInt(el.value));
+  }
+  dv.setUint8(14, lastModeA);                      // read-only: preserved, firmware ignores it
+  for (const [id, off] of HOLD_FIELDS) dv.setUint16(off, parseInt($(id).value) || 0, true);
+  return buf;
+}
+
+function syncOutputs() {
+  for (const [id,,kind] of FIELDS) {
+    if (kind === 'b') continue;
+    const o = $(id + 'O'); if (!o) continue;
+    const v = parseInt($(id).value);
+    if (kind === 'i') o.value = (v > 0 ? '+' : '') + v + ' dB';
+    else o.value = v + (id.includes('Vol') ? '%' : '');
+  }
+}
+
+async function writeSettings() {
+  if (!settingsChr) return;
+  try { await settingsChr.writeValue(encodeFromControls()); }
+  catch (e) { log('write failed: ' + e, 'err-t'); }
+}
+
+// any control edit pushes the whole blob (debounced a touch for sliders)
+let wTimer;
+function onControlInput() {
+  if (suppress) return;
+  syncOutputs();
+  clearTimeout(wTimer);
+  wTimer = setTimeout(writeSettings, 60);
+}
+for (const [id] of FIELDS) $(id).addEventListener('input', onControlInput);
+for (const [id] of HOLD_FIELDS) $(id).addEventListener('input', onControlInput);
+
+// ---- actions ----
+async function sendAction(bytes) {
+  if (!actionChr) return;
+  try { await actionChr.writeValue(new Uint8Array(bytes)); }
+  catch (e) { log('action failed: ' + e, 'err-t'); }
+}
+$('save').onclick = () => {
+  sendAction([0x01]);
+  const s = $('savedMsg'); s.classList.add('show');
+  setTimeout(() => s.classList.remove('show'), 1600);
+  log('saved to device', 'ok-t');
+};
+document.querySelectorAll('[data-chime]').forEach(b =>
+  b.onclick = () => sendAction([0x02, parseInt(b.dataset.chime)]));
+$('play').onclick = () => {
+  const name = $('clipName').value;
+  sendAction([0x03, ...new TextEncoder().encode(name)]);
+  log('play "' + name + '"', 'dim-t');
+};
+
+// ---- firmware update (OTA) ----
+// Pushes a .bin over the OTACTL/OTADATA characteristics. The device quiesces its
+// audio path, erases the inactive slot, takes the chunks with windowed flow
+// control, verifies (crc32 here + SHA-256 on-device), and reboots.
+const dvBytes = (dv) => new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
+const u32le = (n) => { const b = new Uint8Array(4); new DataView(b.buffer).setUint32(0, n >>> 0, true); return b; };
+
+// crc32 (zlib/IEEE, reflected 0xedb88320), matches esp_rom_crc32_le on-device.
+function crc32(buf) {
+  let crc = 0xffffffff; const u8 = new Uint8Array(buf);
+  for (let n = 0; n < u8.length; n++) {
+    let c = (crc ^ u8[n]) & 0xff;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+    crc = (crc >>> 8) ^ c;
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function onFwFile(file) {
+  if (!file) return;
+  const r = new FileReader();
+  r.onload = () => {
+    otaImage = r.result;
+    const size = otaImage.byteLength, crc = crc32(otaImage);
+    $('fwHint').innerHTML = `<b>${file.name}</b> - ${(size / 1024).toFixed(0)} KB`;
+    $('fwFlash').disabled = false;
+    $('fwStatus').textContent = 'Ready to flash.';
+    log(`loaded ${file.name}: ${size} bytes, crc32 0x${crc.toString(16).padStart(8, '0')}`, 'dim-t');
+  };
+  r.readAsArrayBuffer(file);
+}
+
+function setOtaActive(active) {
+  $('fwFlash').disabled = active || !otaImage;
+  $('fwAbort').disabled = !active;
+  $('fwFile').disabled = active;
+}
+// Reset the firmware-update card to its idle state. Called on every (re)connect
+// so a card left mid-flash never persists: a successful OTA reboots the device
+// ~400 ms after the DONE notify, which usually drops the BLE link before DONE
+// arrives, so onOtaStatus(DONE) may never run and the card would otherwise
+// stay stuck on "Flashing...". Reconnecting always starts clean; the refreshed
+// "Installed firmware: v..." line is the real success confirmation.
+function resetOtaUi() {
+  ota = null; otaImage = null;
+  $('fwBarWrap').hidden = true;
+  $('fwBar').style.transform = 'scaleX(0)';
+  $('fwStatus').textContent = '';
+  $('fwRate').textContent = '';
+  $('fwHint').innerHTML = 'Tap to choose a <b>.bin</b> file, or drop it here';
+  $('fwFile').value = '';        // clear the native file input
+  $('fwFile').disabled = false;
+  $('fwFlash').disabled = true;  // re-enabled when a .bin is chosen
+  $('fwAbort').disabled = true;
+}
+function fwProgress() {
+  const pct = Math.floor(ota.acked / ota.size * 100);
+  $('fwBar').style.transform = `scaleX(${ota.acked / ota.size})`;
+  const dt = (performance.now() - ota.t0) / 1000;
+  $('fwStatus').textContent = `Flashing... ${pct}%`;
+  $('fwRate').textContent = dt > 0 ? `${(ota.acked / dt / 1024).toFixed(1)} KiB/s` : '';
+}
+const waitAck = () => new Promise((res) => ota.waiters.push(res));
+
+function onOtaStatus(dv) {
+  const code = dv.getUint8(0);
+  if (code === OTA.INFO) {                       // reply to GET_INFO: "version|slot|builddate"
+    const [ver, slot, date] = new TextDecoder().decode(dvBytes(dv).slice(1)).split('|');
+    $('fwRunning').textContent = ver ? `v${ver}` : '';
+    $('fwInstalled').innerHTML = ver
+      ? `Installed firmware: <b>v${ver}</b>${slot ? ' - ' + slot : ''}${date ? ' - built ' + date : ''}`
+      : 'Installed firmware: -';
+    return;
+  }
+  if (!ota) return;
+  if (code === OTA.READY) {
+    if (dv.byteLength >= 9) { ota.chunk = dv.getUint32(1, true); ota.window = dv.getUint32(5, true); }
+    log(`device ready, chunk ${ota.chunk}B, window ${ota.window}B`, 'dim-t');
+    pumpOta();
+  } else if (code === OTA.ACK) {
+    ota.acked = dv.getUint32(1, true);
+    const w = ota.waiters; ota.waiters = []; w.forEach((fn) => fn());
+    fwProgress();
+  } else if (code === OTA.DONE) {
+    $('fwBar').style.transform = 'scaleX(1)';
+    $('fwStatus').textContent = 'Flashed. Device is rebooting into the new firmware.';
+    log('firmware flashed; device rebooting', 'ok-t');
+    setOtaActive(false);
+  } else if (code === OTA.ERROR) {
+    const err = dv.byteLength > 1 ? dv.getUint8(1) : 0;
+    const msg = dv.byteLength > 2 ? new TextDecoder().decode(dvBytes(dv).slice(2)) : '';
+    ota.error = `error ${err} ${msg}`.trim();
+    $('fwStatus').textContent = 'Update failed: ' + ota.error;
+    log('OTA ' + ota.error, 'err-t');
+    setOtaActive(false);
+  }
+}
+
+async function startOta() {
+  if (!otaImage || !otaCtlChr || !otaDataChr) return;
+  const size = otaImage.byteLength, crc = crc32(otaImage);
+  ota = { size, crc, sent: 0, acked: 0, chunk: 240, window: 8192,
+          t0: performance.now(), waiters: [], error: null };
+  setOtaActive(true);
+  $('fwBarWrap').hidden = false;
+  $('fwBar').style.transform = 'scaleX(0)';
+  $('fwRate').textContent = '';
+  $('fwStatus').textContent = 'Preparing... (device pauses audio and erases flash)';
+  log(`OTA begin: ${size} bytes, crc32 0x${crc.toString(16).padStart(8, '0')}`, 'dim-t');
+  const begin = new Uint8Array(9);
+  begin[0] = OTA.BEGIN; begin.set(u32le(size), 1); begin.set(u32le(crc), 5);
+  try {
+    await otaCtlChr.writeValue(begin);   // device replies READY once it has quiesced + erased
+  } catch (e) {
+    $('fwStatus').textContent = 'Could not start: ' + e;
+    log('OTA begin failed: ' + e, 'err-t');
+    setOtaActive(false);
+  }
+}
+
+async function pumpOta() {
+  const u8 = new Uint8Array(otaImage);
+  const chunk = Math.min(ota.chunk, 512);
+  try {
+    while (ota.sent < ota.size && !ota.error) {
+      while (ota.sent - ota.acked >= ota.window && !ota.error) await waitAck();  // flow control
+      const end = Math.min(ota.sent + chunk, ota.size);
+      await otaDataChr.writeValueWithoutResponse(u8.subarray(ota.sent, end));
+      ota.sent = end;
+    }
+    if (ota.error) return;
+    while (ota.acked < ota.size && !ota.error) await waitAck();   // drain remaining acks
+    log('all data sent; finalizing...', 'dim-t');
+    $('fwBar').style.transform = 'scaleX(1)';
+    // The device verifies, swaps the boot slot, and reboots, usually dropping
+    // the link before the DONE notify lands, so set the final message here
+    // rather than relying on onOtaStatus(DONE).
+    $('fwStatus').textContent = 'Verifying and rebooting into the new firmware... reconnect in a moment.';
+    $('fwRate').textContent = '';
+    ota.ended = true;
+    setOtaActive(false);
+    await otaCtlChr.writeValue(new Uint8Array([OTA.END]));
+  } catch (e) {
+    // A disconnect here after END is the expected success path (device rebooted).
+    if (ota && ota.ended) { log('device rebooted into new firmware', 'ok-t'); return; }
+    log('transfer failed: ' + e, 'err-t');
+    $('fwStatus').textContent = 'Transfer failed: ' + e;
+    setOtaActive(false);
+  }
+}
+
+async function abortOta() {
+  try { if (otaCtlChr) await otaCtlChr.writeValue(new Uint8Array([OTA.ABORT])); } catch {}
+  if (ota) ota.error = 'cancelled';
+  $('fwStatus').textContent = 'Cancelled.';
+  setOtaActive(false);
+  log('update cancelled', 'dim-t');
+}
+
+$('fwFile').addEventListener('change', (e) => onFwFile(e.target.files[0]));
+$('fwFlash').onclick = startOta;
+$('fwAbort').onclick = abortOta;
+{
+  const drop = $('fwDrop');
+  ['dragenter', 'dragover'].forEach((ev) =>
+    drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach((ev) =>
+    drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove('over'); }));
+  drop.addEventListener('drop', (e) => { const f = e.dataTransfer?.files[0]; if (f) onFwFile(f); });
+}
+
+// ---- connection ----
+function setStatus(state, label) {
+  const p = $('status');
+  p.dataset.state = state;
+  p.querySelector('.label').textContent = label;
+}
+function setConnected(on) {
+  $('connectView').hidden = on;
+  $('panel').hidden = !on;
+  $('disconnect').disabled = !on;
+  if (on) {
+    setStatus('connected', 'Connected');
+    $('panel').classList.add('panel-in');
+    // strip the one-shot entrance class after it plays so re-renders don't repeat it
+    setTimeout(() => $('panel').classList.remove('panel-in'), 700);
+  } else {
+    setStatus('disconnected', 'Not connected');
+    if (ota) ota.error = 'disconnected';   // unblock/stop any in-flight pump
+    otaCtlChr = otaDataChr = null;
+  }
+}
+
+$('connect').onclick = async () => {
+  try {
+    if (!navigator.bluetooth) {
+      banner('This browser has no Web Bluetooth. Open this page in Chrome or Edge on desktop or Android.');
+      return;
+    }
+    $('banner').classList.remove('show');
+    setStatus('connecting', 'Connecting...');
+    log('requesting device...', 'dim-t');
+    device = await navigator.bluetooth.requestDevice({ filters: [{ name: 'GameBoy HiFi Setup' }], optionalServices: [SVC] });
+    device.addEventListener('gattserverdisconnected', () => { log('device disconnected', 'dim-t'); setConnected(false); });
+    const server = await device.gatt.connect();
+    const svc = await server.getPrimaryService(SVC);
+    settingsChr = await svc.getCharacteristic(SETTINGS);
+    actionChr   = await svc.getCharacteristic(ACTION);
+
+    // subscribe to change notifications (reflects console edits + mode changes)
+    await settingsChr.startNotifications();
+    settingsChr.addEventListener('characteristicvaluechanged', (e) => {
+      decodeToControls(e.target.value); log('settings updated', 'dim-t');
+    });
+    decodeToControls(await settingsChr.readValue());
+
+    // OTA characteristics are optional; tolerate firmware that predates them.
+    try {
+      otaCtlChr  = await svc.getCharacteristic(OTACTL);
+      otaDataChr = await svc.getCharacteristic(OTADATA);
+      resetOtaUi();   // start every session with a clean card (never stuck mid-flash)
+      await otaCtlChr.startNotifications();
+      otaCtlChr.addEventListener('characteristicvaluechanged', (e) => onOtaStatus(e.target.value));
+      await otaCtlChr.writeValue(new Uint8Array([OTA.GET_INFO]));   // -> running version/slot
+    } catch {
+      otaCtlChr = otaDataChr = null;
+      $('fwRunning').textContent = 'not supported';
+      $('fwInstalled').textContent = 'Installed firmware: (this build predates OTA)';
+      $('fwDrop').style.display = 'none';
+      $('fwFlash').disabled = true;
+      log('firmware update not available on this device', 'dim-t');
+    }
+
+    setConnected(true);
+    log('connected', 'ok-t');
+  } catch (e) {
+    setStatus('disconnected', 'Not connected');
+    if (e && e.name === 'NotFoundError') log('connection cancelled', 'dim-t');
+    else log('connect failed: ' + e, 'err-t');
+  }
+};
+$('disconnect').onclick = () => { if (device?.gatt.connected) device.gatt.disconnect(); };
+</script>
+</body>
+</html>

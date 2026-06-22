@@ -1,0 +1,11 @@
+# Managed components. PlatformIO fetches these from the Espressif component
+# registry on build.
+#
+#   esp-dsp           - biquad filters and coefficient generators for the
+#                       speaker EQ (dsp.c).
+#   joltwallet/littlefs - LittleFS VFS for the clip store partition (fs.c,
+#                       sfx.c). Power-loss safe, supports runtime writes.
+dependencies:
+  idf: ">=5.0"
+  espressif/esp-dsp: "^1.5.0"
+  joltwallet/littlefs: "^1.14.0"

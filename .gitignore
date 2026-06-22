@@ -1,0 +1,42 @@
+# PlatformIO build artifacts
+firmware/.pio/
+firmware/.pioenvs/
+firmware/.piolibdeps/
+firmware/.vscode/
+
+# ESP-IDF / PlatformIO generated files (regenerated each build)
+firmware/build/
+firmware/CMakeLists.txt
+firmware/sdkconfig
+firmware/sdkconfig.old
+firmware/sdkconfig.prod
+firmware/managed_components/
+firmware/dependencies.lock
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# KiCad generated / per-user / IDE noise
+hardware/**/*-backups/
+hardware/**/.history/
+hardware/**/*-erc.rpt
+hardware/**/*-drc.rpt
+hardware/**/*.kicad_prl
+hardware/**/_autosave-*.kicad_sch
+hardware/**/_autosave-*.kicad_pcb
+hardware/**/fp-info-cache
+hardware/**/~*.lck
+hardware/**/*.3mf
+hardware/**/*.kicad_pcb.zip
+hardware/**/gerbers/
+hardware/**/pcbway-gerbers/
+
+# Python
+tools/__pycache__/
+
+# Claude Code local state
+.claude/

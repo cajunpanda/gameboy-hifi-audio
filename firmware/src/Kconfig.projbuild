@@ -1,0 +1,299 @@
+menu "GameBoy HiFi Audio"
+
+    menu "Timeouts and timing"
+
+        config GBHIFI_STANDBY_TIMEOUT_S
+            int "STANDBY give-up timeout (seconds)"
+            default 30
+            range 5 600
+            help
+                Time spent in STANDBY retrying a connection before giving up
+                and dropping to DEEP_IDLE.
+
+        config GBHIFI_RECONNECT_TICK_S
+            int "STANDBY reconnect retry interval (seconds)"
+            default 5
+            range 1 60
+            help
+                How often, while in STANDBY, to re-attempt paging the bonded
+                sink(s).
+
+        config GBHIFI_SILENCE_WINDOWS
+            int "Silence windows before SUSPEND (1-second windows)"
+            default 2
+            range 1 30
+            help
+                Number of consecutive ~1 s below-threshold peak windows before
+                audio is declared silent and the A2DP stream suspends.
+
+        config GBHIFI_CONNECT_HOLD_MS
+            int "Connect/Pair button connect hold threshold (milliseconds)"
+            default 3000
+            range 500 10000
+            help
+                First-stage hold on the Connect/Pair button: held this long, the
+                mod (re)connects to bonded headphones and plays a confirming
+                chime. Keep holding for GBHIFI_PAIR_EXTRA_MS more to escalate to
+                pairing.
+
+        config GBHIFI_PAIR_EXTRA_MS
+            int "Connect/Pair button extra hold to reach pairing (milliseconds)"
+            default 3000
+            range 500 10000
+            help
+                Second-stage hold: additional time beyond GBHIFI_CONNECT_HOLD_MS
+                that the Connect/Pair button must stay held to enter pairing for
+                a new device (a different chime confirms). Total pairing hold =
+                GBHIFI_CONNECT_HOLD_MS + this.
+
+        config GBHIFI_MODE_EXTRA_MS
+            int "Connect/Pair button extra hold to reach mode-toggle (milliseconds)"
+            default 3000
+            range 500 10000
+            help
+                Third-stage hold: additional time beyond the pairing threshold
+                that the Connect/Pair button must stay held to reach the
+                mode-toggle rung (Mode A to Mode B). Total mode hold =
+                GBHIFI_CONNECT_HOLD_MS + GBHIFI_PAIR_EXTRA_MS + this (~9 s).
+                Seeds settings.hold_mode_ms, runtime-tunable thereafter via the
+                console `hold` command or the BLE web UI.
+
+        config GBHIFI_MODE_EXIT_MS
+            int "Mode A exit hold (milliseconds)"
+            default 9000
+            range 500 15000
+            help
+                Hold the Connect/Pair button this long to leave Mode A (the
+                analog-bypass battery mode). Mode A has no chime menu (the
+                DSP/SFX path is stopped in bypass), so this hold fires at the
+                deadline rather than on release: the user can't hear how long
+                they've held, and the returning DSP audio plus "full mode" chime
+                are the confirmation. Defaults to 9 s to match the mode-toggle
+                rung that enters Mode A. Seeds settings.hold_mode_exit_ms.
+
+        config GBHIFI_DEBOUNCE_MS
+            int "Button debounce interval (milliseconds)"
+            default 20
+            range 5 200
+            help
+                Settle delay after a GPIO edge before resampling the
+                Connect/Pair button or HP-detect line.
+
+        config GBHIFI_PAIRING_TIMEOUT_S
+            int "Pairing-mode session timeout (seconds)"
+            default 120
+            range 10 600
+            help
+                Maximum time to stay in pairing mode (active inquiry/paging is
+                power-hungry). Started on entering PAIRING; on expiry the
+                device gives up, sleeping (DEEP_IDLE) if there are no bonds,
+                or returning to STANDBY to reconnect if bonds already exist.
+                Hold the Connect/Pair button to start a fresh pairing session.
+
+        config GBHIFI_WAKE_HOLD_S
+            int "Hold-to-wake confirm time (seconds)"
+            default 2
+            range 1 10
+            help
+                The Connect/Pair button is tapped from the GBA R shoulder net,
+                pressed constantly during play, and it's a deep-sleep wake
+                source. On such a wake we require the button to stay held this
+                long before committing to a full boot; a shorter press is
+                treated as game input and drops straight back to deep sleep.
+                Checked before any heavy init runs.
+
+        config GBHIFI_FACTORY_RESET_S
+            int "Boot-time factory-reset hold (seconds)"
+            default 10
+            range 3 30
+            help
+                Hold the Connect/Pair button this long while powering on to
+                clear all bonded headphones (factory reset). Checked once at
+                boot before the state machine starts.
+
+        config GBHIFI_INQUIRY_DURATION
+            int "Pairing inquiry duration (units of 1.28 s)"
+            default 10
+            range 4 48
+            help
+                Bluetooth GAP inquiry length while pairing, in 1.28 s units
+                (10 ~ 12.8 s).
+
+    endmenu
+
+    config GBHIFI_BLE_CONFIG
+        bool "BLE GATT config server (Web-Bluetooth control UI)"
+        depends on BT_BLE_ENABLED
+        default y
+        help
+            Brings up a BLE GATT server alongside the classic A2DP source so a
+            hosted Web-Bluetooth page can read/write the DSP settings over BLE
+            (no WiFi). Requires the controller in BTDM dual mode
+            (CONFIG_BTDM_CTRL_MODE_BTDM=y + CONFIG_BT_BLE_ENABLED=y in
+            sdkconfig); the option is hidden when BLE is disabled, so a
+            classic-only build never compiles or runs any of it. The GATT
+            characteristics are another caller of the settings_*/sfx_* API the
+            UART console drives. One custom service with a packed-settings
+            read/write/notify characteristic plus an action (save/chime/play)
+            write characteristic.
+
+    config GBHIFI_DEBUG_PEAK_LOG
+        bool "Log per-second ADC peak levels (debug)"
+        default n
+        help
+            Emit a once-per-second `audio: peak L=.. R=..` line at INFO with the
+            ADC peak magnitudes plus stream-buffer fill level. Useful for
+            pre-gain trimming, clip checks, and clock-drift bring-up. Off by
+            default: when off the line stays ESP_LOGD (compiled out at the INFO
+            log level) so it doesn't spam the console in normal use.
+
+    config GBHIFI_DEBUG_WAVEDUMP
+        bool "Emit one-shot waveform dump over UART"
+        default n
+        help
+            On the first I2S read with non-zero data, print a WAVEDUMP_BEGIN/END
+            block of 1024 raw stereo samples over UART for the wavedump plot
+            tool to capture and graph. Debug aid for verifying the ADC capture
+            path; leave off in production builds: it spams the console once per
+            boot and pulls printf into the audio task.
+
+    menu "Speaker DSP defaults"
+
+        comment "First-boot seeds for the settings store (settings.c). Live"
+        comment "values persist in NVS and are tuned at runtime via the console."
+
+        config GBHIFI_DSP_DEFAULT_VOLUME
+            int "Default speaker volume (%)"
+            default 80
+            range 0 100
+            help
+                Initial digital volume for the local speaker path. Perceptual
+                (squared) curve; 100 = unity (the pre-gain already drives the
+                signal hot, so this only ever attenuates).
+
+        config GBHIFI_DSP_BT_DEFAULT_VOLUME
+            int "Default Bluetooth volume (%)"
+            default 100
+            range 0 100
+            help
+                Initial digital volume on the A2DP/Bluetooth path, independent
+                of the speaker volume. 100 = unity (no attenuation), the
+                recommended default since BT sinks have their own volume
+                control. Lowering it digitally attenuates the stream.
+
+        config GBHIFI_DSP_EQ_DEFAULT_ON
+            bool "Speaker EQ enabled by default"
+            default y
+
+        config GBHIFI_DSP_EQ_BASS_DB
+            int "Default EQ bass (low-shelf ~150 Hz) gain, dB"
+            default -3
+            range -12 12
+            help
+                Negative rolls off bass the tiny GBA driver can't reproduce,
+                saving excursion/power and reducing distortion.
+
+        config GBHIFI_DSP_EQ_MID_DB
+            int "Default EQ mid (presence ~2.5 kHz peak) gain, dB"
+            default 6
+            range -12 12
+            help
+                Voiced by ear for the stock GBA 8 ohm / 0.5 W driver: a strong
+                presence lift for clarity, paired with a bass cut and treble
+                lift (the tiny driver is bass-shy and rolls off the top).
+
+        config GBHIFI_DSP_EQ_TREBLE_DB
+            int "Default EQ treble (high-shelf ~5 kHz) gain, dB"
+            default 6
+            range -12 12
+
+        config GBHIFI_DSP_HP_EQ_DEFAULT_ON
+            bool "Headphone EQ enabled by default"
+            default n
+            help
+                The local-path EQ profile used while wired headphones are
+                plugged (swapped in on the HP-detect edge). Off and flat by
+                default: headphones vary widely and are the premium output, so
+                leave them untouched and let the user dial it in.
+
+        config GBHIFI_DSP_HP_EQ_BASS_DB
+            int "Default headphone EQ bass (low-shelf) gain, dB"
+            default 0
+            range -12 12
+
+        config GBHIFI_DSP_HP_EQ_MID_DB
+            int "Default headphone EQ mid (presence) gain, dB"
+            default 0
+            range -12 12
+
+        config GBHIFI_DSP_HP_EQ_TREBLE_DB
+            int "Default headphone EQ treble (high-shelf) gain, dB"
+            default 0
+            range -12 12
+
+        config GBHIFI_DSP_BT_EQ_DEFAULT_ON
+            bool "Bluetooth EQ enabled by default"
+            default n
+            help
+                Optional source-side tone control on the A2DP/Bluetooth path,
+                independent of the speaker EQ. Off by default: most BT sinks
+                reproduce the source faithfully; enable only if you want a house
+                curve the sink can't provide itself.
+
+        config GBHIFI_DSP_BT_EQ_BASS_DB
+            int "Default BT EQ bass (low-shelf) gain, dB"
+            default 0
+            range -12 12
+
+        config GBHIFI_DSP_BT_EQ_MID_DB
+            int "Default BT EQ mid (presence) gain, dB"
+            default 0
+            range -12 12
+
+        config GBHIFI_DSP_BT_EQ_TREBLE_DB
+            int "Default BT EQ treble (high-shelf) gain, dB"
+            default 0
+            range -12 12
+
+        config GBHIFI_DSP_SFX_DEFAULT_ON
+            bool "Sound cues (SFX) enabled by default"
+            default y
+
+        config GBHIFI_DSP_SFX_LEVEL_DB
+            int "Default cue mix level trim, dB"
+            default 0
+            range -24 6
+            help
+                Gain applied to mixed cues (chimes/clips) relative to their
+                authored level. Cues are mixed post-volume so they stay
+                audible regardless of the speaker volume setting.
+
+    endmenu
+
+    menu "Operating modes"
+
+        comment "First-boot seeds for the Mode A/B preferences (settings.c)."
+        comment "Live values persist in NVS; set at runtime via console / BLE."
+
+        config GBHIFI_DEFAULT_MODE_A
+            bool "Boot into Mode A (analog bypass) by default"
+            default n
+            help
+                Sticky default audio path. OFF = Mode B (full DSP: EQ, SFX,
+                volume, A2DP). ON = Mode A (ES8388 analog bypass, digital path
+                stopped, the low-power "battery" mode). Boot always brings up
+                the full Mode-B path first (the codec needs live MCLK once to
+                configure), then transitions to Mode A if this is set.
+
+        config GBHIFI_UNPLUG_TO_B
+            bool "On wired-HP unplug in Mode A, switch to Mode B"
+            default n
+            help
+                Behavior when wired headphones are pulled while in Mode A.
+                OFF = stay in Mode A (the speaker keeps running in battery
+                mode, symmetric with insertion). ON = switch to Mode B so the
+                speaker gets the full DSP path.
+
+    endmenu
+
+endmenu

@@ -1,0 +1,63 @@
+# sdkconfig defaults. PlatformIO picks this up automatically when present.
+
+# Bluetooth: classic (A2DP) plus BLE (the web config server).
+# The controller runs in BTDM dual mode so the BLE GATT config server runs
+# alongside the A2DP source. To build classic-only, set BT_BLE_ENABLED=n and the
+# CTRL_MODE choice back to BR_EDR_ONLY, then delete sdkconfig.esp32dev. bt_a2d.c
+# keys off CONFIG_BT_BLE_ENABLED and rebuilds unchanged.
+CONFIG_BT_ENABLED=y
+CONFIG_BT_CLASSIC_ENABLED=y
+CONFIG_BT_A2DP_ENABLE=y
+CONFIG_BT_SPP_ENABLED=n
+CONFIG_BT_BLE_ENABLED=y
+
+# BTDM controller mode must match what we enable at runtime
+# (esp_bt_controller_enable in bt_a2d.c). BR_EDR_ONLY is classic only; BTDM is
+# dual. The IDF default BLE_ONLY makes esp_bt_controller_enable(CLASSIC_BT) fail
+# with INVALID_ARG.
+CONFIG_BTDM_CTRL_MODE_BLE_ONLY=n
+CONFIG_BTDM_CTRL_MODE_BR_EDR_ONLY=n
+CONFIG_BTDM_CTRL_MODE_BTDM=y
+
+# Run the BLE GATT config server alongside the A2DP source. Needs BT_BLE_ENABLED.
+CONFIG_GBHIFI_BLE_CONFIG=y
+
+# Power management. Tickless idle (automatic light sleep) deschedules the audio
+# pipeline task long enough to underrun the A2DP stream and garble Bluetooth, so
+# it stays off. PM_ENABLE stays on for DFS and BT controller modem-sleep, which
+# carry the streaming-power savings; disabling PM entirely boot-loops.
+CONFIG_PM_ENABLE=y
+CONFIG_FREERTOS_USE_TICKLESS_IDLE=n
+
+# CPU at 80 MHz. The DSP load is light and this saves about 20 mA versus 240 MHz.
+CONFIG_ESP32_DEFAULT_CPU_FREQ_80=y
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_80=y
+
+# Flash size (IDF default is 2 MB).
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="8MB"
+
+# Custom partition table (nvs / otadata / phy_init / ota_0 / ota_1 / storage).
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# Firmware version, shown in the web UI via the OTA GET_INFO reply and at boot.
+# Pinned here rather than from git-describe. Keep it in lockstep with the release
+# tag (minus the leading 'v'): bump this, delete sdkconfig.esp32dev, rebuild.
+CONFIG_APP_PROJECT_VER_FROM_CONFIG=y
+CONFIG_APP_PROJECT_VER="1.0.0"
+
+# OTA rollback / anti-brick. A freshly OTA'd image boots in PENDING_VERIFY; main.c
+# marks it valid once init completes, so an image that panics during init is
+# reverted to the previous slot by the bootloader on the next reset. This is not
+# anti-rollback / secure-version, which is a separate secure-boot feature.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
+# Interrupt watchdog at 2000 ms (IDF default 300 ms). A marginal I2C bus can make
+# the driver run its bus-recovery long enough to trip the 300 ms watchdog; the
+# longer window lets recovery finish and surface as a logged error instead of a
+# crash.
+CONFIG_ESP_INT_WDT_TIMEOUT_MS=2000
+
+# The per-second ADC peak log lives behind CONFIG_GBHIFI_DEBUG_PEAK_LOG, off by
+# default. Enable it in a local build when trimming gain or chasing clock drift.

@@ -1,0 +1,17 @@
+# GameBoy HiFi partition table, 8 MB. Dual OTA app slots so the firmware can be
+# updated over BLE (esp_ota) from the web config page; otadata records the active
+# slot.
+#
+# The first flash onto this layout must be a full cabled flash (bootloader, this
+# table, app to ota_0, erased otadata, storage image at 0x420000). You cannot OTA
+# into a layout the running image predates. nvs keeps its 0x9000/0x6000, so
+# bonds and settings survive an OTA.
+#
+# App is about 1.1 MB; each 2 MB slot leaves ample headroom.
+# Name,   Type, SubType,  Offset,    Size,      Flags
+nvs,      data, nvs,      0x9000,    0x6000,
+otadata,  data, ota,      0xf000,    0x2000,
+phy_init, data, phy,      0x11000,   0x1000,
+ota_0,    app,  ota_0,    0x20000,   0x200000,
+ota_1,    app,  ota_1,    0x220000,  0x200000,
+storage,  data, littlefs, 0x420000,  0x3E0000,

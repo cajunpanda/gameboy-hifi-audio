@@ -1,0 +1,8 @@
+(sym_lib_table
+	(version 7)
+	(lib (name "project_symbols") (type "KiCad") (uri "${KIPRJMOD}/libs/symbols") (options "") (descr ""))
+	(lib (name "Espressif") (type "KiCad") (uri "${KIPRJMOD}/libs/symbols/Espressif.kicad_sym") (options "") (descr ""))
+	(lib (name "ES8388") (type "KiCad") (uri "${KIPRJMOD}/libs/symbols/ES8388.kicad_sym") (options "") (descr ""))
+	(lib (name "TPS61021ADSGR") (type "KiCad") (uri "${KIPRJMOD}/libs/symbols/TPS61021ADSGR.kicad_sym") (options "") (descr ""))
+	(lib (name "PAM8302A") (type "KiCad") (uri "${KIPRJMOD}/libs/symbols/PAM8302A.kicad_sym") (options "") (descr ""))
+)
