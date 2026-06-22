@@ -106,33 +106,8 @@ GND and the battery rail reach the main board through the flex. The control
 button signal (the R shoulder net) rides the flex too. The two speaker leads are
 the only separate wires.
 
-## Installing it in the GBA
+## Installing the mod
 
-At a high level:
-
-1. Remove the GBA's stock audio amplifier (U6) from the mainboard.
-2. Solder the flex to the U6 footprint. This picks up power, ground, the audio
-   taps, and the R-button net.
-3. Connect the flex to the main board through the flat-flex connector.
-4. Run the two speaker wires from the main board to the GBA's speaker pads.
-5. Bring the headphone sleeve return (AGND) from the CP4 pad.
-6. Fold the flex as designed and secure the board.
-
-The KiCad flex project and its silkscreen show the exact pad mapping. Follow
-that, not a generic pinout.
-
-## First firmware flash
-
-A freshly assembled board has no firmware. Flash it once over a USB-to-serial
-cable, then later updates can go over Bluetooth from the web page.
-
-See [FIRMWARE.md](FIRMWARE.md) for the build and flash steps. In short: install
-PlatformIO, build the firmware, and upload it over serial. After the first
-flash, the web config page can push updates wirelessly.
-
-## Cautions
-
-- Removing U6 is permanent. The mod becomes the GBA's audio system.
-- Double-check the grounding rule. Mixing the switching return into the audio
-  reference produces a whine you will not be able to tune out in software.
-- Confirm you are powering from the battery rail, not the 5 V rail.
+Once the boards are assembled, see [AGB-INSTALL.md](AGB-INSTALL.md) to fit the mod into
+a Game Boy Advance: removing the stock parts, attaching the flex, wiring the
+speaker, and the first firmware flash.

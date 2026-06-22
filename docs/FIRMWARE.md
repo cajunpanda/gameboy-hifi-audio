@@ -9,7 +9,9 @@ The firmware is an ESP-IDF project built through PlatformIO, not through
 `idf.py`. You need:
 
 - PlatformIO (the `pio` CLI, or the VS Code extension).
-- A USB-to-serial connection to the board for the first flash.
+- A Tag-Connect TC2030 serial cable for the first cabled flash. The
+  [TC2030-NL-FTDI-C232HD](https://www.tag-connect.com/product/tc2030-nl-ftdi-c232hd-ddhsp-0-dtr-usb-to-tc2030-no-legs-serial-cable)
+  carries DTR for auto-reset into the bootloader. Later updates go over Bluetooth.
 
 PlatformIO downloads the ESP-IDF framework and the managed components on the
 first build. `firmware/sdkconfig.defaults` is the source of truth for the IDF

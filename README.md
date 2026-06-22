@@ -6,6 +6,14 @@ ES8388 codec. The mod streams game audio to Bluetooth headphones and speakers,
 and it also drives the GBA's built-in speaker and wired headphone jack itself,
 with onboard EQ, volume, and sound effects.
 
+<p align="center">
+  <img src="docs/images/main-board.png" alt="GameBoy HiFi AGB main board" height="300">
+  &nbsp;&nbsp;
+  <img src="docs/images/flex.png" alt="GameBoy HiFi AGB flex" height="300">
+  <br>
+  <sub>AGB main board (left) and flex (right)</sub>
+</p>
+
 What you get:
 
 - Bluetooth (A2DP) output to any standard headphones or speaker.
@@ -16,6 +24,10 @@ What you get:
   through the codec in analog, for long unplugged sessions.
 - Firmware updates over Bluetooth.
 
+Prebuilt, pre-assembled kits are available at [cajunpanda.com](https://cajunpanda.com)
+if you would rather not source the parts and solder it yourself. Kits ship
+pre-flashed and update over Bluetooth, so they need no programming cable.
+
 This repository currently holds the board for the original Game Boy Advance
 (AGB). The firmware is shared across models. Boards for other Game Boy models
 will be added under `hardware/` as they are designed.
@@ -24,14 +36,15 @@ will be added under `hardware/` as they are designed.
 
 This project has three kinds of reader. Start with the doc that matches you.
 
-- **You have the mod installed and want to use it.**
-  Read [docs/MANUAL.md](docs/MANUAL.md): pairing, the control button, the modes,
-  the web config page, and troubleshooting.
+- **You have a GameBoy HiFi board, or one already in your GBA.**
+  [docs/AGB-INSTALL.md](docs/AGB-INSTALL.md) fits the board into a Game Boy Advance, and
+  [docs/MANUAL.md](docs/MANUAL.md) covers using it: pairing, the control button,
+  the modes, the web config page, and troubleshooting.
 
-- **You want to build your own.**
+- **You want to build the boards yourself.**
   Read [docs/HARDWARE.md](docs/HARDWARE.md): the bill of materials, the KiCad
-  boards, fabrication and assembly, installing it in the GBA, and the grounding
-  rule.
+  boards, fabrication, and assembly. It links on to the install guide once the
+  boards are ready.
 
 - **You want to change the firmware.**
   Read [docs/FIRMWARE.md](docs/FIRMWARE.md): the toolchain, build and flash,
@@ -44,7 +57,7 @@ firmware/        ESP-IDF firmware (PlatformIO project), shared across boards
 hardware/agb/    KiCad projects for the AGB main board and flex, plus the BOM
 web/             Web Bluetooth config page (hosted on GitHub Pages)
 tools/           serial_proxy.py (serial monitor and flasher), make_clip.py (clip authoring)
-docs/            the three guides above
+docs/            the guides above
 ```
 
 ## License

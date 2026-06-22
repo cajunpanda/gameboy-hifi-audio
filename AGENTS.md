@@ -12,9 +12,10 @@ and drives the local speaker and wired headphones.
 
 The reader docs are the place to start:
 
-- `docs/FIRMWARE.md`: toolchain, build/flash, architecture, config, OTA.
-- `docs/HARDWARE.md`: boards, BOM, fabrication, install, grounding.
 - `docs/MANUAL.md`: end-user operation.
+- `docs/AGB-INSTALL.md`: fitting the assembled mod into a Game Boy Advance.
+- `docs/HARDWARE.md`: boards, BOM, fabrication, assembly, grounding.
+- `docs/FIRMWARE.md`: toolchain, build/flash, architecture, config, OTA.
 
 ## Build, flash, monitor
 

@@ -1,7 +1,8 @@
 # GameBoy HiFi Audio: User Manual
 
-This guide is for using a Game Boy Advance that already has the mod installed.
-If you want to build one, read [HARDWARE.md](HARDWARE.md) instead.
+This guide is for using a Game Boy Advance that has the mod installed. If the mod
+is not installed yet, see [AGB-INSTALL.md](AGB-INSTALL.md) first. To build the boards
+yourself, see [HARDWARE.md](HARDWARE.md).
 
 ## What it does
 
