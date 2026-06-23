@@ -34,6 +34,8 @@ hardware/**/*.3mf
 hardware/**/*.kicad_pcb.zip
 hardware/**/gerbers/
 hardware/**/pcbway-gerbers/
+hardware/**/jlcpcb/
+hardware/**/analysis/
 
 # Python
 tools/__pycache__/
