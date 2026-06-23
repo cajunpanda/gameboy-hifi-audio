@@ -9484,7 +9484,7 @@
 				)
 			)
 		)
-		(property "MPN" "GRM155R61C105KA12D"
+		(property "MPN" "CL05A105KA5NQNC"
 			(at 217.17 224.7899 0)
 			(hide yes)
 			(show_name no)
@@ -9496,7 +9496,7 @@
 				(justify left)
 			)
 		)
-		(property "LCSC" "C77006"
+		(property "LCSC" "C52923"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -9507,7 +9507,7 @@
 				)
 			)
 		)
-		(property "Manufacturer" "Murata Electronics"
+		(property "Manufacturer" "Samsung Electro-Mechanics"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -9518,7 +9518,7 @@
 				)
 			)
 		)
-		(property "DigiKey" "490-10694-1-ND"
+		(property "DigiKey" ""
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -9683,7 +9683,7 @@
 				)
 			)
 		)
-		(property "MPN" "FRC0402F4701TS"
+		(property "MPN" "0402WGF4701TCE"
 			(at 144.78 234.9499 0)
 			(hide yes)
 			(show_name no)
@@ -9695,7 +9695,7 @@
 				(justify left)
 			)
 		)
-		(property "LCSC" "C2906869"
+		(property "LCSC" "C25900"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -9706,7 +9706,7 @@
 				)
 			)
 		)
-		(property "Manufacturer" "FOJAN"
+		(property "Manufacturer" "UNI-ROYAL"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -9717,7 +9717,7 @@
 				)
 			)
 		)
-		(property "DigiKey" "311-4.7KLRCT-ND"
+		(property "DigiKey" ""
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -9807,7 +9807,7 @@
 				)
 			)
 		)
-		(property "MPN" "GRM155R61A106ME11D"
+		(property "MPN" "CL05A106MQ5NUNC"
 			(at 276.352 124.714 0)
 			(hide yes)
 			(show_name no)
@@ -9819,7 +9819,7 @@
 				(justify left)
 			)
 		)
-		(property "LCSC" "C408132"
+		(property "LCSC" "C15525"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -9830,7 +9830,7 @@
 				)
 			)
 		)
-		(property "Manufacturer" "Murata Electronics"
+		(property "Manufacturer" "Samsung Electro-Mechanics"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -9841,7 +9841,7 @@
 				)
 			)
 		)
-		(property "DigiKey" "490-GRM155R61A106ME18DCT-ND"
+		(property "DigiKey" ""
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -9931,7 +9931,7 @@
 				)
 			)
 		)
-		(property "MPN" "GRM155R61A106ME11D"
+		(property "MPN" "CL05A106MQ5NUNC"
 			(at 105.41 162.5599 0)
 			(hide yes)
 			(show_name no)
@@ -9943,7 +9943,7 @@
 				(justify left)
 			)
 		)
-		(property "LCSC" "C408132"
+		(property "LCSC" "C15525"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -9954,7 +9954,7 @@
 				)
 			)
 		)
-		(property "Manufacturer" "Murata Electronics"
+		(property "Manufacturer" "Samsung Electro-Mechanics"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -9965,7 +9965,7 @@
 				)
 			)
 		)
-		(property "DigiKey" "490-GRM155R61A106ME18DCT-ND"
+		(property "DigiKey" ""
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -10146,7 +10146,7 @@
 				)
 			)
 		)
-		(property "MPN" "GRM155R61A106ME11D"
+		(property "MPN" "CL05A106MQ5NUNC"
 			(at 325.12 125.7299 0)
 			(hide yes)
 			(show_name no)
@@ -10158,7 +10158,7 @@
 				(justify left)
 			)
 		)
-		(property "LCSC" "C408132"
+		(property "LCSC" "C15525"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -10169,7 +10169,7 @@
 				)
 			)
 		)
-		(property "Manufacturer" "Murata Electronics"
+		(property "Manufacturer" "Samsung Electro-Mechanics"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -10180,7 +10180,7 @@
 				)
 			)
 		)
-		(property "DigiKey" "490-GRM155R61A106ME18DCT-ND"
+		(property "DigiKey" ""
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -10420,7 +10420,7 @@
 				)
 			)
 		)
-		(property "MPN" "CRCW0402100KFKED"
+		(property "MPN" "0402WGF1003TCE"
 			(at 24.13 213.3599 0)
 			(hide yes)
 			(show_name no)
@@ -10432,7 +10432,7 @@
 				(justify left)
 			)
 		)
-		(property "LCSC" "C481918"
+		(property "LCSC" "C25741"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -10443,7 +10443,7 @@
 				)
 			)
 		)
-		(property "Manufacturer" "Vishay Dale"
+		(property "Manufacturer" "UNI-ROYAL"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -10454,7 +10454,7 @@
 				)
 			)
 		)
-		(property "DigiKey" "311-100KLRCT-ND"
+		(property "DigiKey" ""
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -10769,7 +10769,7 @@
 				)
 			)
 		)
-		(property "MPN" "GRM1555C1H100JA01D"
+		(property "MPN" "CL05C100JB5NNNC"
 			(at 74.93 40.6399 0)
 			(hide yes)
 			(show_name no)
@@ -10781,7 +10781,7 @@
 				(justify left)
 			)
 		)
-		(property "LCSC" "C76946"
+		(property "LCSC" "C32949"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -10792,7 +10792,7 @@
 				)
 			)
 		)
-		(property "Manufacturer" "Murata Electronics"
+		(property "Manufacturer" "Samsung Electro-Mechanics"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -10803,7 +10803,7 @@
 				)
 			)
 		)
-		(property "DigiKey" "490-5921-1-ND"
+		(property "DigiKey" ""
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -10893,7 +10893,7 @@
 				)
 			)
 		)
-		(property "MPN" "GRM155R71H103KA88D"
+		(property "MPN" "CL05B103KB5NNNC"
 			(at 194.31 172.7199 0)
 			(hide yes)
 			(show_name no)
@@ -10905,7 +10905,7 @@
 				(justify left)
 			)
 		)
-		(property "LCSC" "C77019"
+		(property "LCSC" "C15195"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -10916,7 +10916,7 @@
 				)
 			)
 		)
-		(property "Manufacturer" "Murata Electronics"
+		(property "Manufacturer" "Samsung Electro-Mechanics"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -10927,7 +10927,7 @@
 				)
 			)
 		)
-		(property "DigiKey" "490-4516-1-ND"
+		(property "DigiKey" ""
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -11017,7 +11017,7 @@
 				)
 			)
 		)
-		(property "MPN" "GRM155R61A106ME11D"
+		(property "MPN" "CL05A106MQ5NUNC"
 			(at 320.04 87.6299 0)
 			(hide yes)
 			(show_name no)
@@ -11029,7 +11029,7 @@
 				(justify left)
 			)
 		)
-		(property "LCSC" "C408132"
+		(property "LCSC" "C15525"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -11040,7 +11040,7 @@
 				)
 			)
 		)
-		(property "Manufacturer" "Murata Electronics"
+		(property "Manufacturer" "Samsung Electro-Mechanics"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -11051,7 +11051,7 @@
 				)
 			)
 		)
-		(property "DigiKey" "490-GRM155R61A106ME18DCT-ND"
+		(property "DigiKey" ""
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -11216,7 +11216,7 @@
 				)
 			)
 		)
-		(property "MPN" "CRCW0402100KFKED"
+		(property "MPN" "0402WGF1003TCE"
 			(at 223.52 228.5999 0)
 			(hide yes)
 			(show_name no)
@@ -11228,7 +11228,7 @@
 				(justify left)
 			)
 		)
-		(property "LCSC" "C481918"
+		(property "LCSC" "C25741"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -11239,7 +11239,7 @@
 				)
 			)
 		)
-		(property "Manufacturer" "Vishay Dale"
+		(property "Manufacturer" "UNI-ROYAL"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -11250,7 +11250,7 @@
 				)
 			)
 		)
-		(property "DigiKey" "311-100KLRCT-ND"
+		(property "DigiKey" ""
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -11491,7 +11491,7 @@
 				)
 			)
 		)
-		(property "MPN" "ARG02FTC0100"
+		(property "MPN" "0402WGF100JTCE"
 			(at 311.15 102.8699 0)
 			(hide yes)
 			(show_name no)
@@ -11515,7 +11515,7 @@
 				(justify left)
 			)
 		)
-		(property "LCSC" "C284283"
+		(property "LCSC" "C25077"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -11526,7 +11526,7 @@
 				)
 			)
 		)
-		(property "Manufacturer" "Viking"
+		(property "Manufacturer" "UNI-ROYAL"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -11537,7 +11537,7 @@
 				)
 			)
 		)
-		(property "DigiKey" "311-10.0LRCT-ND"
+		(property "DigiKey" ""
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -11702,7 +11702,7 @@
 				)
 			)
 		)
-		(property "MPN" "ERJ2RKF33R0X"
+		(property "MPN" "0402WGF330JTCE"
 			(at 153.67 189.2299 0)
 			(hide yes)
 			(show_name no)
@@ -11714,7 +11714,7 @@
 				(justify left)
 			)
 		)
-		(property "LCSC" "C278594"
+		(property "LCSC" "C25105"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -11725,7 +11725,7 @@
 				)
 			)
 		)
-		(property "Manufacturer" "Panasonic"
+		(property "Manufacturer" "UNI-ROYAL"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -11736,7 +11736,7 @@
 				)
 			)
 		)
-		(property "DigiKey" "311-33.0LRCT-ND"
+		(property "DigiKey" ""
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -12052,7 +12052,7 @@
 				)
 			)
 		)
-		(property "MPN" "GRM155R71H103KA88D"
+		(property "MPN" "CL05B103KB5NNNC"
 			(at 243.84 172.7199 0)
 			(hide yes)
 			(show_name no)
@@ -12064,7 +12064,7 @@
 				(justify left)
 			)
 		)
-		(property "LCSC" "C77019"
+		(property "LCSC" "C15195"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -12075,7 +12075,7 @@
 				)
 			)
 		)
-		(property "Manufacturer" "Murata Electronics"
+		(property "Manufacturer" "Samsung Electro-Mechanics"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -12086,7 +12086,7 @@
 				)
 			)
 		)
-		(property "DigiKey" "490-4516-1-ND"
+		(property "DigiKey" ""
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -12251,7 +12251,7 @@
 				)
 			)
 		)
-		(property "MPN" "FRC0402F4701TS"
+		(property "MPN" "0402WGF4701TCE"
 			(at 154.94 234.9499 0)
 			(hide yes)
 			(show_name no)
@@ -12263,7 +12263,7 @@
 				(justify left)
 			)
 		)
-		(property "LCSC" "C2906869"
+		(property "LCSC" "C25900"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -12274,7 +12274,7 @@
 				)
 			)
 		)
-		(property "Manufacturer" "FOJAN"
+		(property "Manufacturer" "UNI-ROYAL"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -12285,7 +12285,7 @@
 				)
 			)
 		)
-		(property "DigiKey" "311-4.7KLRCT-ND"
+		(property "DigiKey" ""
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -12525,7 +12525,7 @@
 				)
 			)
 		)
-		(property "MPN" "GRM155R71C104KA88D"
+		(property "MPN" "CL05B104KO5NNNC"
 			(at 327.66 106.6799 0)
 			(hide yes)
 			(show_name no)
@@ -12537,7 +12537,7 @@
 				(justify left)
 			)
 		)
-		(property "LCSC" "C71629"
+		(property "LCSC" "C1525"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -12548,7 +12548,7 @@
 				)
 			)
 		)
-		(property "Manufacturer" "Murata Electronics"
+		(property "Manufacturer" "Samsung Electro-Mechanics"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -12559,7 +12559,7 @@
 				)
 			)
 		)
-		(property "DigiKey" "490-3261-1-ND"
+		(property "DigiKey" ""
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -13010,7 +13010,7 @@
 				)
 			)
 		)
-		(property "MPN" "CRCW0402100KFKED"
+		(property "MPN" "0402WGF1003TCE"
 			(at 68.58 58.4199 0)
 			(hide yes)
 			(show_name no)
@@ -13022,7 +13022,7 @@
 				(justify left)
 			)
 		)
-		(property "LCSC" "C481918"
+		(property "LCSC" "C25741"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -13033,7 +13033,7 @@
 				)
 			)
 		)
-		(property "Manufacturer" "Vishay Dale"
+		(property "Manufacturer" "UNI-ROYAL"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -13044,7 +13044,7 @@
 				)
 			)
 		)
-		(property "DigiKey" "311-100KLRCT-ND"
+		(property "DigiKey" ""
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -13495,7 +13495,7 @@
 				)
 			)
 		)
-		(property "MPN" "GRM155R61C105KA12D"
+		(property "MPN" "CL05A105KA5NQNC"
 			(at 191.77 116.8399 0)
 			(hide yes)
 			(show_name no)
@@ -13519,7 +13519,7 @@
 				(justify left)
 			)
 		)
-		(property "LCSC" "C77006"
+		(property "LCSC" "C52923"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -13530,7 +13530,7 @@
 				)
 			)
 		)
-		(property "Manufacturer" "Murata Electronics"
+		(property "Manufacturer" "Samsung Electro-Mechanics"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -13541,7 +13541,7 @@
 				)
 			)
 		)
-		(property "DigiKey" "490-10694-1-ND"
+		(property "DigiKey" ""
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -13631,7 +13631,7 @@
 				)
 			)
 		)
-		(property "MPN" "GRM155R61A106ME11D"
+		(property "MPN" "CL05A106MQ5NUNC"
 			(at 320.04 106.6799 0)
 			(hide yes)
 			(show_name no)
@@ -13643,7 +13643,7 @@
 				(justify left)
 			)
 		)
-		(property "LCSC" "C408132"
+		(property "LCSC" "C15525"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -13654,7 +13654,7 @@
 				)
 			)
 		)
-		(property "Manufacturer" "Murata Electronics"
+		(property "Manufacturer" "Samsung Electro-Mechanics"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -13665,7 +13665,7 @@
 				)
 			)
 		)
-		(property "DigiKey" "490-GRM155R61A106ME18DCT-ND"
+		(property "DigiKey" ""
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -13879,7 +13879,7 @@
 				)
 			)
 		)
-		(property "MPN" "GRM155R71C104KA88D"
+		(property "MPN" "CL05B104KO5NNNC"
 			(at 44.45 185.4199 0)
 			(hide yes)
 			(show_name no)
@@ -13891,7 +13891,7 @@
 				(justify left)
 			)
 		)
-		(property "LCSC" "C71629"
+		(property "LCSC" "C1525"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -13902,7 +13902,7 @@
 				)
 			)
 		)
-		(property "Manufacturer" "Murata Electronics"
+		(property "Manufacturer" "Samsung Electro-Mechanics"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -13913,7 +13913,7 @@
 				)
 			)
 		)
-		(property "DigiKey" "490-3261-1-ND"
+		(property "DigiKey" ""
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -14430,7 +14430,7 @@
 				)
 			)
 		)
-		(property "MPN" "FRC0402F1002TS"
+		(property "MPN" "0402WGF1002TCE"
 			(at 226.06 160.0199 0)
 			(hide yes)
 			(show_name no)
@@ -14442,7 +14442,7 @@
 				(justify left)
 			)
 		)
-		(property "LCSC" "C2906861"
+		(property "LCSC" "C25744"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -14453,7 +14453,7 @@
 				)
 			)
 		)
-		(property "Manufacturer" "FOJAN"
+		(property "Manufacturer" "UNI-ROYAL"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -14464,7 +14464,7 @@
 				)
 			)
 		)
-		(property "DigiKey" "311-10.0KLRCT-ND"
+		(property "DigiKey" ""
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -14554,7 +14554,7 @@
 				)
 			)
 		)
-		(property "MPN" "GRM155R71C104KA88D"
+		(property "MPN" "CL05B104KO5NNNC"
 			(at 320.04 63.4999 0)
 			(hide yes)
 			(show_name no)
@@ -14566,7 +14566,7 @@
 				(justify left)
 			)
 		)
-		(property "LCSC" "C71629"
+		(property "LCSC" "C1525"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -14577,7 +14577,7 @@
 				)
 			)
 		)
-		(property "Manufacturer" "Murata Electronics"
+		(property "Manufacturer" "Samsung Electro-Mechanics"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -14588,7 +14588,7 @@
 				)
 			)
 		)
-		(property "DigiKey" "490-3261-1-ND"
+		(property "DigiKey" ""
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -14678,7 +14678,7 @@
 				)
 			)
 		)
-		(property "MPN" "RK73H1ETTP1001F"
+		(property "MPN" "0402WGF1001TCE"
 			(at 232.41 166.3699 0)
 			(hide yes)
 			(show_name no)
@@ -14690,7 +14690,7 @@
 				(justify left)
 			)
 		)
-		(property "LCSC" "C131360"
+		(property "LCSC" "C11702"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -14701,7 +14701,7 @@
 				)
 			)
 		)
-		(property "Manufacturer" "KOA Speer"
+		(property "Manufacturer" "UNI-ROYAL"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -14712,7 +14712,7 @@
 				)
 			)
 		)
-		(property "DigiKey" "311-1.00KLRCT-ND"
+		(property "DigiKey" ""
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -15225,7 +15225,7 @@
 				)
 			)
 		)
-		(property "MPN" "RC0402FR-0715KL"
+		(property "MPN" "0402WGF1502TCE"
 			(at 201.93 224.7899 0)
 			(hide yes)
 			(show_name no)
@@ -15249,7 +15249,7 @@
 				(justify left)
 			)
 		)
-		(property "LCSC" "C114761"
+		(property "LCSC" "C25756"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -15260,7 +15260,7 @@
 				)
 			)
 		)
-		(property "Manufacturer" "YAGEO"
+		(property "Manufacturer" "UNI-ROYAL"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -15271,7 +15271,7 @@
 				)
 			)
 		)
-		(property "DigiKey" "311-15.0KLRCT-ND"
+		(property "DigiKey" ""
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -15586,7 +15586,7 @@
 				)
 			)
 		)
-		(property "MPN" "GRM155R61C105KA12D"
+		(property "MPN" "CL05A105KA5NQNC"
 			(at 327.66 63.4999 0)
 			(hide yes)
 			(show_name no)
@@ -15598,7 +15598,7 @@
 				(justify left)
 			)
 		)
-		(property "LCSC" "C77006"
+		(property "LCSC" "C52923"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -15609,7 +15609,7 @@
 				)
 			)
 		)
-		(property "Manufacturer" "Murata Electronics"
+		(property "Manufacturer" "Samsung Electro-Mechanics"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -15620,7 +15620,7 @@
 				)
 			)
 		)
-		(property "DigiKey" "490-10694-1-ND"
+		(property "DigiKey" ""
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -15710,7 +15710,7 @@
 				)
 			)
 		)
-		(property "MPN" "GRM155R61A106ME11D"
+		(property "MPN" "CL05A106MQ5NUNC"
 			(at 288.29 228.5999 0)
 			(hide yes)
 			(show_name no)
@@ -15722,7 +15722,7 @@
 				(justify left)
 			)
 		)
-		(property "LCSC" "C408132"
+		(property "LCSC" "C15525"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -15733,7 +15733,7 @@
 				)
 			)
 		)
-		(property "Manufacturer" "Murata Electronics"
+		(property "Manufacturer" "Samsung Electro-Mechanics"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -15744,7 +15744,7 @@
 				)
 			)
 		)
-		(property "DigiKey" "490-GRM155R61A106ME18DCT-ND"
+		(property "DigiKey" ""
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -16059,7 +16059,7 @@
 				)
 			)
 		)
-		(property "MPN" "RK73H1ETTP1001F"
+		(property "MPN" "0402WGF1001TCE"
 			(at 185.42 166.3699 0)
 			(hide yes)
 			(show_name no)
@@ -16071,7 +16071,7 @@
 				(justify left)
 			)
 		)
-		(property "LCSC" "C131360"
+		(property "LCSC" "C11702"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -16082,7 +16082,7 @@
 				)
 			)
 		)
-		(property "Manufacturer" "KOA Speer"
+		(property "Manufacturer" "UNI-ROYAL"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -16093,7 +16093,7 @@
 				)
 			)
 		)
-		(property "DigiKey" "311-1.00KLRCT-ND"
+		(property "DigiKey" ""
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -17021,7 +17021,7 @@
 				)
 			)
 		)
-		(property "MPN" "CRCW0402100KFKED"
+		(property "MPN" "0402WGF1003TCE"
 			(at 24.13 226.0599 0)
 			(hide yes)
 			(show_name no)
@@ -17033,7 +17033,7 @@
 				(justify left)
 			)
 		)
-		(property "LCSC" "C481918"
+		(property "LCSC" "C25741"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -17044,7 +17044,7 @@
 				)
 			)
 		)
-		(property "Manufacturer" "Vishay Dale"
+		(property "Manufacturer" "UNI-ROYAL"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -17055,7 +17055,7 @@
 				)
 			)
 		)
-		(property "DigiKey" "311-100KLRCT-ND"
+		(property "DigiKey" ""
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -17145,7 +17145,7 @@
 				)
 			)
 		)
-		(property "MPN" "FRC0402F1002TS"
+		(property "MPN" "0402WGF1002TCE"
 			(at 147.32 182.8799 0)
 			(hide yes)
 			(show_name no)
@@ -17157,7 +17157,7 @@
 				(justify left)
 			)
 		)
-		(property "LCSC" "C2906861"
+		(property "LCSC" "C25744"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -17168,7 +17168,7 @@
 				)
 			)
 		)
-		(property "Manufacturer" "FOJAN"
+		(property "Manufacturer" "UNI-ROYAL"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -17179,7 +17179,7 @@
 				)
 			)
 		)
-		(property "DigiKey" "311-10.0KLRCT-ND"
+		(property "DigiKey" ""
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -17673,7 +17673,7 @@
 				)
 			)
 		)
-		(property "MPN" "GRM155R61C105KA12D"
+		(property "MPN" "CL05A105KA5NQNC"
 			(at 190.5 91.4399 0)
 			(hide yes)
 			(show_name no)
@@ -17697,7 +17697,7 @@
 				(justify left)
 			)
 		)
-		(property "LCSC" "C77006"
+		(property "LCSC" "C52923"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -17708,7 +17708,7 @@
 				)
 			)
 		)
-		(property "Manufacturer" "Murata Electronics"
+		(property "Manufacturer" "Samsung Electro-Mechanics"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -17719,7 +17719,7 @@
 				)
 			)
 		)
-		(property "DigiKey" "490-10694-1-ND"
+		(property "DigiKey" ""
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -18020,7 +18020,7 @@
 				)
 			)
 		)
-		(property "MPN" "GRM155R61A106ME11D"
+		(property "MPN" "CL05A106MQ5NUNC"
 			(at 312.42 63.4999 0)
 			(hide yes)
 			(show_name no)
@@ -18032,7 +18032,7 @@
 				(justify left)
 			)
 		)
-		(property "LCSC" "C408132"
+		(property "LCSC" "C15525"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -18043,7 +18043,7 @@
 				)
 			)
 		)
-		(property "Manufacturer" "Murata Electronics"
+		(property "Manufacturer" "Samsung Electro-Mechanics"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -18054,7 +18054,7 @@
 				)
 			)
 		)
-		(property "DigiKey" "490-GRM155R61A106ME18DCT-ND"
+		(property "DigiKey" ""
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -18144,7 +18144,7 @@
 				)
 			)
 		)
-		(property "MPN" "GRM155R71C104KA88D"
+		(property "MPN" "CL05B104KO5NNNC"
 			(at 295.91 228.5999 0)
 			(hide yes)
 			(show_name no)
@@ -18156,7 +18156,7 @@
 				(justify left)
 			)
 		)
-		(property "LCSC" "C71629"
+		(property "LCSC" "C1525"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -18167,7 +18167,7 @@
 				)
 			)
 		)
-		(property "Manufacturer" "Murata Electronics"
+		(property "Manufacturer" "Samsung Electro-Mechanics"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -18178,7 +18178,7 @@
 				)
 			)
 		)
-		(property "DigiKey" "490-3261-1-ND"
+		(property "DigiKey" ""
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -18343,7 +18343,7 @@
 				)
 			)
 		)
-		(property "MPN" "ERJ2GE0R00X"
+		(property "MPN" "0402WGF0000TCE"
 			(at 140.97 49.5299 0)
 			(hide yes)
 			(show_name no)
@@ -18367,7 +18367,7 @@
 				(justify left)
 			)
 		)
-		(property "LCSC" "C242160"
+		(property "LCSC" "C17168"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -18378,7 +18378,7 @@
 				)
 			)
 		)
-		(property "Manufacturer" "Panasonic"
+		(property "Manufacturer" "UNI-ROYAL"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -18389,7 +18389,7 @@
 				)
 			)
 		)
-		(property "DigiKey" "311-0.0JRCT-ND"
+		(property "DigiKey" ""
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -18779,7 +18779,7 @@
 				)
 			)
 		)
-		(property "MPN" "CL05A475MQ5NRNC"
+		(property "MPN" "CL05A475MP5NRNC"
 			(at 345.44 120.396 0)
 			(hide yes)
 			(show_name no)
@@ -18791,7 +18791,7 @@
 				(justify left)
 			)
 		)
-		(property "LCSC" "C307423"
+		(property "LCSC" "C23733"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -18813,7 +18813,7 @@
 				)
 			)
 		)
-		(property "DigiKey" "490-5915-1-ND"
+		(property "DigiKey" ""
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -19128,7 +19128,7 @@
 				)
 			)
 		)
-		(property "MPN" "GRM155R71C104KA88D"
+		(property "MPN" "CL05B104KO5NNNC"
 			(at 113.03 162.5599 0)
 			(hide yes)
 			(show_name no)
@@ -19140,7 +19140,7 @@
 				(justify left)
 			)
 		)
-		(property "LCSC" "C71629"
+		(property "LCSC" "C1525"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -19151,7 +19151,7 @@
 				)
 			)
 		)
-		(property "Manufacturer" "Murata Electronics"
+		(property "Manufacturer" "Samsung Electro-Mechanics"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -19162,7 +19162,7 @@
 				)
 			)
 		)
-		(property "DigiKey" "490-3261-1-ND"
+		(property "DigiKey" ""
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -19402,7 +19402,7 @@
 				)
 			)
 		)
-		(property "MPN" "RC0402FR-0715KL"
+		(property "MPN" "0402WGF1502TCE"
 			(at 201.93 217.1699 0)
 			(hide yes)
 			(show_name no)
@@ -19426,7 +19426,7 @@
 				(justify left)
 			)
 		)
-		(property "LCSC" "C114761"
+		(property "LCSC" "C25756"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -19437,7 +19437,7 @@
 				)
 			)
 		)
-		(property "Manufacturer" "YAGEO"
+		(property "Manufacturer" "UNI-ROYAL"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -19448,7 +19448,7 @@
 				)
 			)
 		)
-		(property "DigiKey" "311-15.0KLRCT-ND"
+		(property "DigiKey" ""
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -19613,7 +19613,7 @@
 				)
 			)
 		)
-		(property "MPN" "FRC0402F2201TS"
+		(property "MPN" "0402WGF2201TCE"
 			(at 165.1 91.4399 0)
 			(hide yes)
 			(show_name no)
@@ -19637,7 +19637,7 @@
 				(justify left)
 			)
 		)
-		(property "LCSC" "C2906865"
+		(property "LCSC" "C25879"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -19648,7 +19648,7 @@
 				)
 			)
 		)
-		(property "Manufacturer" "FOJAN"
+		(property "Manufacturer" "UNI-ROYAL"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -19659,7 +19659,7 @@
 				)
 			)
 		)
-		(property "DigiKey" "13-RC0402FR-132K2LCT-ND"
+		(property "DigiKey" ""
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -19824,7 +19824,7 @@
 				)
 			)
 		)
-		(property "MPN" "GRM155R71C104KA88D"
+		(property "MPN" "CL05B104KO5NNNC"
 			(at 36.83 226.0599 0)
 			(hide yes)
 			(show_name no)
@@ -19836,7 +19836,7 @@
 				(justify left)
 			)
 		)
-		(property "LCSC" "C71629"
+		(property "LCSC" "C1525"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -19847,7 +19847,7 @@
 				)
 			)
 		)
-		(property "Manufacturer" "Murata Electronics"
+		(property "Manufacturer" "Samsung Electro-Mechanics"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -19858,7 +19858,7 @@
 				)
 			)
 		)
-		(property "DigiKey" "490-3261-1-ND"
+		(property "DigiKey" ""
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -20331,7 +20331,7 @@
 				)
 			)
 		)
-		(property "MPN" "GRM155R71C104KA88D"
+		(property "MPN" "CL05B104KO5NNNC"
 			(at 327.66 87.6299 0)
 			(hide yes)
 			(show_name no)
@@ -20343,7 +20343,7 @@
 				(justify left)
 			)
 		)
-		(property "LCSC" "C71629"
+		(property "LCSC" "C1525"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -20354,7 +20354,7 @@
 				)
 			)
 		)
-		(property "Manufacturer" "Murata Electronics"
+		(property "Manufacturer" "Samsung Electro-Mechanics"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -20365,7 +20365,7 @@
 				)
 			)
 		)
-		(property "DigiKey" "490-3261-1-ND"
+		(property "DigiKey" ""
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -20935,7 +20935,7 @@
 				)
 			)
 		)
-		(property "MPN" "FRC0402F2201TS"
+		(property "MPN" "0402WGF2201TCE"
 			(at 166.37 116.8399 0)
 			(hide yes)
 			(show_name no)
@@ -20959,7 +20959,7 @@
 				(justify left)
 			)
 		)
-		(property "LCSC" "C2906865"
+		(property "LCSC" "C25879"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -20970,7 +20970,7 @@
 				)
 			)
 		)
-		(property "Manufacturer" "FOJAN"
+		(property "Manufacturer" "UNI-ROYAL"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -20981,7 +20981,7 @@
 				)
 			)
 		)
-		(property "DigiKey" "13-RC0402FR-132K2LCT-ND"
+		(property "DigiKey" ""
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -21270,7 +21270,7 @@
 				)
 			)
 		)
-		(property "MPN" "FRC0402F1002TS"
+		(property "MPN" "0402WGF1002TCE"
 			(at 44.45 170.1799 0)
 			(hide yes)
 			(show_name no)
@@ -21282,7 +21282,7 @@
 				(justify left)
 			)
 		)
-		(property "LCSC" "C2906861"
+		(property "LCSC" "C25744"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -21293,7 +21293,7 @@
 				)
 			)
 		)
-		(property "Manufacturer" "FOJAN"
+		(property "Manufacturer" "UNI-ROYAL"
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
@@ -21304,7 +21304,7 @@
 				)
 			)
 		)
-		(property "DigiKey" "311-10.0KLRCT-ND"
+		(property "DigiKey" ""
 			(at 0 0 0)
 			(hide yes)
 			(show_name no)
