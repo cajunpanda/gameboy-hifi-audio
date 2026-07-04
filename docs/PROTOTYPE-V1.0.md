@@ -103,6 +103,12 @@ Fixes for the next revision:
 3. Optional: add an output ferrite-bead plus cap EMI filter given the long flex
    speaker run.
 
+Fix 1 validated on the first board by bodge (2026-07-04): IN- (pin 4) lifted off
+GND and a 1 uF ceramic added from IN- to GND, value-matched to C19 on IN+ (both
+form the input high-pass with the amp's internal ~10k, corner ~16 Hz at 1 uF).
+SPK+/SPK- DC offset went from 2.7 V to 0 V, U4 runs cool, and the brownout/cook
+cycle is gone. Carry the IN- coupling cap into Rev B.
+
 Firmware guard for continued bring-up: boot with the speaker amp disabled by
 default (leave `PIN_PAM_SD` deasserted, enable only by an explicit console
 command). SD already has a 100k pulldown, so leaving it undriven keeps the amp
