@@ -271,7 +271,8 @@ static int cmd_wheel(int argc, char **argv)
         int raw = -1, pct = -1;
         app_sm_vol_wheel_read(&raw, &pct);
         if (raw < 0) printf("VOL wheel: ADC unavailable\n");
-        else         printf("VOL wheel: raw=%d / 4095  pct=%d%%\n", raw, pct);
+        else printf("VOL wheel: raw=%d / 4095  pct=%d%%  (VBAT=%d mV)\n",
+                    raw, pct, app_sm_read_vbat_mv());
         return 0;
     }
     if (argc != 2) { printf("usage: wheel [on|off]\n"); return 1; }
@@ -304,6 +305,16 @@ static int cmd_hp(int argc, char **argv)
     else if (strcmp(argv[1], "unplug") == 0) { app_sm_force_hp(0);  printf("HP forced UNPLUGGED\n"); }
     else if (strcmp(argv[1], "follow") == 0) { app_sm_force_hp(-1); printf("HP follows GPIO\n"); }
     else { printf("usage: hp plug|unplug|follow\n"); return 1; }
+    return 0;
+}
+
+// `batt`: read the battery rail (VBAT via the ADC1_CH0 sense divider).
+static int cmd_batt(int argc, char **argv)
+{
+    (void)argc; (void)argv;
+    int mv = app_sm_read_vbat_mv();
+    if (mv < 0) { printf("battery: sense unavailable\n"); return 1; }
+    printf("battery: VBAT=%d mV  (~%d%%)\n", mv, app_sm_batt_pct(mv));
     return 0;
 }
 
@@ -371,6 +382,7 @@ static void register_cmds(void)
         { .command = "unplug",.help = "On HP unplug in Mode A: unplug stay|b", .func = cmd_unplug },
         { .command = "hold",  .help = "R-button hold thresholds (ms): hold [connect pair mode exit]", .func = cmd_hold },
         { .command = "wheel", .help = "VOL wheel drives volume: wheel on|off",  .func = cmd_wheel },
+        { .command = "batt",  .help = "Read battery rail voltage: batt",         .func = cmd_batt },
         { .command = "outvol",.help = "Mode A analog volume (HP+spk drivers): outvol <0-100>", .func = cmd_outvol },
         { .command = "hp",    .help = "Override HP-detect (bench): hp plug|unplug|follow", .func = cmd_hp },
         { .command = "sleep", .help = "Force deep sleep (wake-reliability test): sleep", .func = cmd_sleep },

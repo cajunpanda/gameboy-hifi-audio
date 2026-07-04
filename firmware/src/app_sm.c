@@ -17,6 +17,8 @@
 #include "sfx.h"
 
 #include "esp_adc/adc_oneshot.h"
+#include "esp_adc/adc_cali.h"
+#include "esp_adc/adc_cali_scheme.h"
 // Fire a synth cue on the local speaker path.
 #define CUE(id) sfx_trigger_synth(id)
 
@@ -152,7 +154,28 @@ static es8388_mode_t s_active_mode = ES8388_MODE_DSP;
 #define VOL_RAW_MIN     400
 #define VOL_RAW_MAX     3550
 #define VOL_OVERSAMPLE  16
+
+// Battery sense: VBAT (the U3 boost input) through an R20/R21 = 100k/100k divider
+// into ADC1_CH0, so VBAT_mV = 2 * sense_mV. Shares the ADC1 oneshot unit with the
+// wheel and needs adc_cali to turn raw counts into millivolts.
+#define VBAT_ADC_CHANNEL  ADC_CHANNEL_0     // GPIO36 (PIN_VBAT_ADC)
+#define VBAT_DIVIDER_NUM  2                 // (R20 + R21) / R21 = 200k / 100k
+#define VBAT_OVERSAMPLE   16
+// The GBA volume pot is powered from VBAT, so the wiper reading scales with the
+// battery. Normalising each raw reading back to VBAT_REF_MV (the VBAT the
+// VOL_RAW_MIN/MAX window was calibrated at) keeps that calibration valid as the
+// battery droops.
+#define VBAT_REF_MV       3200
+// Low-battery latch: warn under VBAT_LOW_MV, clear only above +HYST (2x AA GBA
+// rail: ~3.2 V full, ~2.4 V flat). Rough %: empty..full window below.
+#define VBAT_LOW_MV       2500
+#define VBAT_LOW_HYST_MV  150
+#define VBAT_EMPTY_MV     2400
+#define VBAT_FULL_MV      3200
+
 static adc_oneshot_unit_handle_t s_vol_adc = NULL;
+static adc_cali_handle_t s_adc1_cali = NULL;   // ADC1 raw->mV (NULL = no battery mV)
+static bool  s_batt_low      = false;   // low-battery latch (hysteresis)
 static bool  s_wheel_enabled = true;
 static int   s_vol_last_pct  = -1;
 static float s_wheel_ema     = -1.0f;   // EMA of the raw ADC (<0 = unseeded)
@@ -237,6 +260,23 @@ static void vol_adc_init(void)
     if (adc_oneshot_config_channel(s_vol_adc, VOL_ADC_CHANNEL, &chan_cfg) != ESP_OK) {
         ESP_LOGW(TAG, "VOL ADC channel cfg failed; wheel disabled");
         s_vol_adc = NULL;
+        return;
+    }
+
+    // Battery sense shares the ADC1 unit. The cali handle turns raw counts into
+    // millivolts; without it VBAT and the battery-referenced wheel fall back to
+    // raw-only behaviour, so a failure here is non-fatal.
+    if (adc_oneshot_config_channel(s_vol_adc, VBAT_ADC_CHANNEL, &chan_cfg) != ESP_OK) {
+        ESP_LOGW(TAG, "VBAT ADC channel cfg failed; battery sense off");
+    }
+    adc_cali_line_fitting_config_t cali_cfg = {
+        .unit_id  = ADC_UNIT_1,
+        .atten    = ADC_ATTEN_DB_12,
+        .bitwidth = ADC_BITWIDTH_DEFAULT,
+    };
+    if (adc_cali_create_scheme_line_fitting(&cali_cfg, &s_adc1_cali) != ESP_OK) {
+        ESP_LOGW(TAG, "ADC1 cali init failed; battery mV unavailable");
+        s_adc1_cali = NULL;
     }
 }
 
@@ -265,11 +305,24 @@ static int raw_to_pct(int raw)
     return (raw - VOL_RAW_MIN) * 100 / (VOL_RAW_MAX - VOL_RAW_MIN);
 }
 
+// Battery-normalise a raw wheel reading: the pot is powered from VBAT, so the
+// wiper (and thus the raw count) scales with the battery. Rescale to VBAT_REF_MV
+// so raw_to_pct's fixed window holds as VBAT droops. No-op when the battery
+// reading is unavailable (falls back to the plain raw value).
+static int vol_batt_correct(int raw)
+{
+    if (raw < 0) return raw;
+    int vbat = app_sm_read_vbat_mv();
+    if (vbat <= 0) return raw;
+    long c = (long)raw * VBAT_REF_MV / vbat;
+    return (c > 4095) ? 4095 : (int)c;
+}
+
 // Read the wheel as 0..100%, or -1 if the ADC is unavailable. Unsmoothed: used by
 // the console `wheel` read-out so it shows the live ADC value.
 static int vol_read_pct(void)
 {
-    return raw_to_pct(vol_read_raw());
+    return raw_to_pct(vol_batt_correct(vol_read_raw()));
 }
 
 // EMA-smoothed wheel read (0..100%), or -1 if the ADC is unavailable. Both the
@@ -282,14 +335,63 @@ static int vol_read_pct_smoothed(void)
     if (raw < 0) return -1;
     if (s_wheel_ema < 0.0f) s_wheel_ema = (float)raw;          // seed on first read
     else s_wheel_ema += ((float)raw - s_wheel_ema) * VOL_EMA_ALPHA;
-    return raw_to_pct((int)(s_wheel_ema + 0.5f));
+    return raw_to_pct(vol_batt_correct((int)(s_wheel_ema + 0.5f)));
 }
 
 void app_sm_vol_wheel_read(int *raw_out, int *pct_out)
 {
     int raw = vol_read_raw();
-    if (raw_out) *raw_out = raw;
-    if (pct_out) *pct_out = raw_to_pct(raw);
+    if (raw_out) *raw_out = raw;                          // live ADC (uncorrected)
+    if (pct_out) *pct_out = raw_to_pct(vol_batt_correct(raw));
+}
+
+// Read VBAT in millivolts, or -1 if the battery sense/cali is unavailable.
+// Oversamples the divided sense node, converts to mV via the ADC1 calibration,
+// then undoes the R20/R21 divider.
+int app_sm_read_vbat_mv(void)
+{
+    if (!s_vol_adc || !s_adc1_cali) return -1;
+    int acc = 0;
+    for (int i = 0; i < VBAT_OVERSAMPLE; i++) {
+        int raw = 0;
+        if (adc_oneshot_read(s_vol_adc, VBAT_ADC_CHANNEL, &raw) != ESP_OK) return -1;
+        acc += raw;
+    }
+    int sense_mv = 0;
+    if (adc_cali_raw_to_voltage(s_adc1_cali, acc / VBAT_OVERSAMPLE, &sense_mv) != ESP_OK) {
+        return -1;
+    }
+    return sense_mv * VBAT_DIVIDER_NUM;
+}
+
+// Rough battery percentage from a VBAT reading, linear across the 2x AA window.
+// -1 if the reading is invalid.
+int app_sm_batt_pct(int vbat_mv)
+{
+    if (vbat_mv < 0)              return -1;
+    if (vbat_mv <= VBAT_EMPTY_MV) return 0;
+    if (vbat_mv >= VBAT_FULL_MV)  return 100;
+    return (vbat_mv - VBAT_EMPTY_MV) * 100 / (VBAT_FULL_MV - VBAT_EMPTY_MV);
+}
+
+// Periodic battery poll (called from the ~60 s heartbeat). Logs VBAT and drives
+// the low-battery latch with hysteresis: warn once on the way down, clear only
+// after a solid recovery.
+void app_sm_batt_check(void)
+{
+    int mv = app_sm_read_vbat_mv();
+    if (mv < 0) return;
+    int pct = app_sm_batt_pct(mv);
+    if (!s_batt_low && mv < VBAT_LOW_MV) {
+        s_batt_low = true;
+        ESP_LOGW(TAG, "battery LOW: VBAT=%d mV (~%d%%)", mv, pct);
+    } else if (s_batt_low && mv > VBAT_LOW_MV + VBAT_LOW_HYST_MV) {
+        s_batt_low = false;
+        ESP_LOGI(TAG, "battery recovered: VBAT=%d mV (~%d%%)", mv, pct);
+    } else {
+        ESP_LOGI(TAG, "battery: VBAT=%d mV (~%d%%)%s",
+                 mv, pct, s_batt_low ? " [LOW]" : "");
+    }
 }
 
 // Apply the wheel reading to the active path's volume, with hysteresis. No-op

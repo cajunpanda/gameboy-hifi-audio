@@ -39,3 +39,13 @@ void app_sm_vol_wheel_read(int *raw_out, int *pct_out);
 // GPIO again. While forced, real jack edges are ignored. Driven by the
 // `hp plug|unplug|follow` console command.
 void app_sm_force_hp(int mode);
+
+// Battery sense on ADC1_CH0 (VBAT through the R20/R21 = 100k/100k divider, so
+// VBAT = 2x the sensed voltage). app_sm_read_vbat_mv returns VBAT in millivolts
+// (-1 if the sense/cali is unavailable); app_sm_batt_pct maps a reading to a
+// rough 0..100%; app_sm_batt_check is the periodic poll (call from the ~60 s
+// heartbeat) that logs VBAT and manages the low-battery latch. The volume wheel
+// is battery-referenced off the same VBAT so its calibration holds as it droops.
+int  app_sm_read_vbat_mv(void);
+int  app_sm_batt_pct(int vbat_mv);
+void app_sm_batt_check(void);

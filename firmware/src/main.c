@@ -229,5 +229,6 @@ void app_main(void)
         vTaskDelay(pdMS_TO_TICKS(60000));
         ESP_LOGI(TAG, "alive (free heap: %" PRIu32 " B, min ever: %" PRIu32 " B)",
                  esp_get_free_heap_size(), esp_get_minimum_free_heap_size());
+        app_sm_batt_check();
     }
 }

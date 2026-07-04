@@ -24,8 +24,15 @@
 
 // ----- Analog input: GBA volume wheel (VR2 wiper) -----
 // Read on ADC1; GPIO39 is input-only. In Mode B the wheel sets the DSP digital
-// volume; in Mode A it sets the ES8388 analog-bypass volume over I2C.
+// volume; in Mode A it sets the ES8388 analog-bypass volume over I2C. The wheel
+// is powered from VBAT, so its reading is battery-referenced (see PIN_VBAT_ADC).
 #define PIN_VOL_ADC     39
+
+// ----- Analog input: battery-rail sense -----
+// VBAT (the GBA battery rail feeding the U3 boost) through an R20/R21 = 100k/100k
+// divider into ADC1_CH0 (GPIO36, input-only). VBAT = 2 * V(PIN_VBAT_ADC). Shares
+// the ADC1 oneshot unit with the volume wheel.
+#define PIN_VBAT_ADC    36
 
 // ----- Control outputs -----
 // External mono speaker-amp shutdown/mute (active HIGH = amp enabled).
