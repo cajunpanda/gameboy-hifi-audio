@@ -39,78 +39,11 @@ stencil and reflow, or hot air. The ESP32 module is castellated and easier.
 
 ### Antenna
 
-The `-02U` module has an **external antenna connector**, not an on-board PCB
-antenna. Per the Espressif datasheet it is a **third-generation I-PEX MHF III**
-connector, also sold as **Hirose W.FL** or **Amphenol AMMC** — the three names
-are the same interface. Order an antenna terminated in one of those.
-
-Do **not** buy a U.FL / IPEX MHF1 antenna (the common default): it is physically
-larger and will not seat on the MHF III connector. MHF4 is too small.
-
-Native MHF III antennas are uncommon and mostly special-order, and the one FPC
-type that is stocked (Kyocera `9000352F0`) is a *"for metal surfaces"* antenna
-that detunes on a plastic shell. So the build uses a common **free-space
-2.4 GHz FPC antenna** (designed for plastic enclosures) plus a small adapter to
-bridge the connector generations:
-
-- **`ANT1` — Taoglas `FXP70.07.0053A`**: adhesive flexible FPC, single-band
-  2.4 GHz, ~53 mm lead, 1.1 dBi, terminated in **U.FL / IPEX MHF1**. Mount it
-  against the plastic, with keep-out from metal and the PCB ground. Stocked,
-  MOQ 1. For more range use `FXP73.07.0100A` (100 mm, 2.5 dBi).
-- **`ADPT1` — MHF III (plug) → U.FL (jack) adapter**: a short (~50 mm) coax that
-  presents an MHF III / W.FL **plug** to the module and a U.FL **jack** for the
-  antenna. This is not a distributor part — order it from an RF pigtail vendor
-  (Data Alliance, superbatrf, eteily) or AliExpress.
-
-The adapter adds ~10 cm of total cable and two extra micro-connections, so keep
-it as short as possible and coil the slack inside the shell. If you would rather
-avoid the adapter, order the antenna itself terminated in MHF III (a special
-order with MOQ/lead time) and drop `ADPT1`.
-
-Do **not** substitute a U.FL / MHF1 antenna directly onto the module: the module
-is MHF III and the two do not mate — that mismatch is what the adapter resolves.
-The `FXP70`'s 1.1 dBi sits within the datasheet's ≤ 2.33 dBi certified envelope;
-if you swap to a higher-gain antenna you may exceed the module's FCC/CE modular
-grant. Both `ANT1` and `ADPT1` are cabled accessories (marked do-not-place) — not
-assembled onto the board. Press each connector straight down to mate it; MHF III
-is fragile and rated for only a handful of mating cycles.
-
-#### Bench bring-up
-
-For integration testing you do not need the final in-shell antenna. The simplest
-rig that mates the module directly is an external whip on a bulkhead pigtail:
-
-- **W.FL → RP-SMA-female bulkhead cable** (0.81 mm coax), e.g. Data Alliance's
-  W.FL-to-RP-SMA-female cable. The W.FL end is an MHF III **plug** that mates the
-  module; the RP-SMA-female end takes any RP-SMA-male whip.
-- **RP-SMA-male 2.4 GHz whip**, e.g. a 5 dBi articulating antenna.
-
-Full chain: `module MHF III jack → W.FL plug —[coax]— RP-SMA-F bulkhead ←
-RP-SMA-M whip`. The 5 dBi whip exceeds the module's ≤ 2.33 dBi certified
-envelope, which is fine on the bench but must not ship in a certified product.
-Do **not** try to re-terminate spare U.FL/MHF1 FPC antennas onto MHF III by hand:
-that connector is a crimp-plus-center-pin-solder onto thin coax, not a solder
-swap, and hand rework gives unreliable VSWR — use the pigtail instead.
-
-#### Production sourcing
-
-MHF III antennas are uncommon off-the-shelf, but this needs a catalog antenna
-with the MHF III connector option, not a bespoke antenna design. In order of
-preference:
-
-1. **2J Antennas** — flexible connector/cable-length configurator, friendlier
-   MOQs; ships an FXP-class flex antenna with an MHF III plug and a chosen lead
-   length. Removes `ADPT1`.
-2. **Taoglas `FXP70`/`FXP73` with the MHF III connector code** — the same
-   free-space antenna as `ANT1`, factory-terminated in MHF III (custom-line SKU,
-   MOQ + lead time). Removes `ADPT1`.
-3. **Kyocera `9000352F0-AE20L0050`** (50 mm MHF III) — MOQ 200, ~9-week lead; a
-   normal buy at run sizes near 200, but it is the metal-surface type so back it
-   with the PCB ground.
-
-Budget an MOQ of a few hundred and an 8–12 week lead, and validate VSWR/range
-with the antenna in its final position inside the actual GBA shell — the plastic,
-battery, and PCB all detune it.
+The `-02U` module uses an external I-PEX **MHF III (W.FL)** antenna connector,
+not U.FL/MHF1, so `ANT1` needs the `ADPT1` adapter. Antenna selection, the
+bench rig, and production sourcing options are documented in
+[`PROTOTYPE-V1.0.md`](PROTOTYPE-V1.0.md) (the connector-generation mismatch was
+a first-run finding).
 
 ## Ordering the boards
 
