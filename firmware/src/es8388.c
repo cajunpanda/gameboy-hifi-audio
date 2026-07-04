@@ -171,14 +171,15 @@ esp_err_t es8388_init(es8388_service_cb_t service)
         { ES8388_DACCONTROL19, 0x38 },
         { ES8388_DACCONTROL20, 0xb8 }, // RDAC -> right output
         // -------- output driver volumes --------
-        // HP amp (LOUT1/ROUT1) at 0x0e ~ -24 dB: 0 dB is too hot driving
-        // headphones directly. Line out (LOUT2/ROUT2) stays 0x1e ~ 0 dB, right for
-        // the speaker amp, where the speaker (not the level) is the loudness
-        // limiter. dB = reg*1.5-45.
-        { ES8388_DACCONTROL24, 0x0e }, // LOUT1 (HP L)  ~ -24 dB
-        { ES8388_DACCONTROL25, 0x0e }, // ROUT1 (HP R)  ~ -24 dB
-        { ES8388_DACCONTROL26, 0x1e }, // LOUT2 (line L -> speaker amp) ~ 0 dB
-        { ES8388_DACCONTROL27, 0x1e }, // ROUT2 (line R -> speaker amp) ~ 0 dB
+        // HP amp (LOUT1/ROUT1) at 0x14 ~ -15 dB and line out (LOUT2/ROUT2) at
+        // 0x17 ~ -10.5 dB, both tuned by ear on the bench. The PAM8302A's ~+23.5 dB
+        // fixed gain overdrives the 8 ohm speaker at line level, so the codec
+        // attenuates the speaker path to keep loud passages clean; the HP amp is
+        // trimmed for a comfortable level driving headphones directly. dB = reg*1.5-45.
+        { ES8388_DACCONTROL24, 0x14 }, // LOUT1 (HP L)  ~ -15 dB
+        { ES8388_DACCONTROL25, 0x14 }, // ROUT1 (HP R)  ~ -15 dB
+        { ES8388_DACCONTROL26, 0x17 }, // LOUT2 (line L -> speaker amp) ~ -10.5 dB
+        { ES8388_DACCONTROL27, 0x17 }, // ROUT2 (line R -> speaker amp) ~ -10.5 dB
         // -------- final: power up the DEM + STM digital engine (must be last) -
         { ES8388_CHIPPOWER,    0x00 }, // run the DAC/ADC state machine
     };
@@ -213,8 +214,8 @@ static const struct { uint8_t reg, val; } s_critical_cfg[] = {
     { ES8388_DACCONTROL4, 0x00 }, { ES8388_DACCONTROL5, 0x00 },
     { ES8388_DACCONTROL16,0x00 }, { ES8388_DACCONTROL17,0xb8 },
     { ES8388_DACCONTROL20,0xb8 }, { ES8388_DACCONTROL21,0x80 },
-    { ES8388_DACCONTROL24,0x0e }, { ES8388_DACCONTROL25,0x0e },  // HP ~ -24 dB
-    { ES8388_DACCONTROL26,0x1e }, { ES8388_DACCONTROL27,0x1e },  // line ~ 0 dB
+    { ES8388_DACCONTROL24,0x14 }, { ES8388_DACCONTROL25,0x14 },  // HP ~ -15 dB
+    { ES8388_DACCONTROL26,0x17 }, { ES8388_DACCONTROL27,0x17 },  // line ~ -10.5 dB
 };
 
 esp_err_t es8388_verify_config(es8388_service_cb_t service)
