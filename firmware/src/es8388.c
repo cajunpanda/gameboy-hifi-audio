@@ -81,13 +81,15 @@ esp_err_t es8388_read_reg(uint8_t reg, uint8_t *val)
     return i2c_master_transmit_receive(s_dev, &reg, 1, val, 1, I2C_TIMEOUT_MS);
 }
 
-// Per-output volume ceilings (6-bit field; dB = reg*1.5-45, 0x21 ~ +4.5 dB). The
-// line out to the external speaker amp can use the full range (the speaker, not
-// the level, is the loudness limiter). The HP amp drives headphones directly, so
-// it gets a much lower ceiling, ~ -24 dB (0x0e), matching the DSP-path HP default
-// in es8388_init(); 0 dB blasts headphones.
-#define ES8388_LINE_VOL_MAX 0x21
-#define ES8388_HP_VOL_MAX   0x0e
+// Tuned output-driver levels (6-bit field; dB = reg*1.5-45), set by ear on the
+// bench. Single source of truth: es8388_init() and the verify table use these as
+// the fixed Mode B driver levels, and es8388_set_output_volume() uses them as the
+// Mode A analog-volume ceilings at full wheel. Keeping them shared makes the
+// loudness match across a B<->A switch: the PAM8302A's ~+23.5 dB fixed gain would
+// overdrive the 8 ohm speaker at line level, so the speaker sits at -10.5 dB, and
+// the HP amp drives headphones directly so it sits a bit lower at -15 dB.
+#define ES8388_LINE_VOL_MAX 0x17   // LOUT2/ROUT2 speaker line out ~ -10.5 dB
+#define ES8388_HP_VOL_MAX   0x14   // LOUT1/ROUT1 headphone amp    ~ -15 dB
 
 // Map 0..100 % to a 6-bit output-volume register, scaled to the given ceiling.
 static uint8_t vol_to_reg_max(int percent, uint8_t reg_max)
@@ -171,15 +173,12 @@ esp_err_t es8388_init(es8388_service_cb_t service)
         { ES8388_DACCONTROL19, 0x38 },
         { ES8388_DACCONTROL20, 0xb8 }, // RDAC -> right output
         // -------- output driver volumes --------
-        // HP amp (LOUT1/ROUT1) at 0x14 ~ -15 dB and line out (LOUT2/ROUT2) at
-        // 0x17 ~ -10.5 dB, both tuned by ear on the bench. The PAM8302A's ~+23.5 dB
-        // fixed gain overdrives the 8 ohm speaker at line level, so the codec
-        // attenuates the speaker path to keep loud passages clean; the HP amp is
-        // trimmed for a comfortable level driving headphones directly. dB = reg*1.5-45.
-        { ES8388_DACCONTROL24, 0x14 }, // LOUT1 (HP L)  ~ -15 dB
-        { ES8388_DACCONTROL25, 0x14 }, // ROUT1 (HP R)  ~ -15 dB
-        { ES8388_DACCONTROL26, 0x17 }, // LOUT2 (line L -> speaker amp) ~ -10.5 dB
-        { ES8388_DACCONTROL27, 0x17 }, // ROUT2 (line R -> speaker amp) ~ -10.5 dB
+        // From the shared ES8388_*_VOL_MAX constants (tuned by ear), so the fixed
+        // Mode B levels here and the Mode A wheel ceilings stay in lockstep.
+        { ES8388_DACCONTROL24, ES8388_HP_VOL_MAX },   // LOUT1 (HP L)  ~ -15 dB
+        { ES8388_DACCONTROL25, ES8388_HP_VOL_MAX },   // ROUT1 (HP R)  ~ -15 dB
+        { ES8388_DACCONTROL26, ES8388_LINE_VOL_MAX }, // LOUT2 (line L -> speaker amp) ~ -10.5 dB
+        { ES8388_DACCONTROL27, ES8388_LINE_VOL_MAX }, // ROUT2 (line R -> speaker amp) ~ -10.5 dB
         // -------- final: power up the DEM + STM digital engine (must be last) -
         { ES8388_CHIPPOWER,    0x00 }, // run the DAC/ADC state machine
     };
@@ -214,8 +213,8 @@ static const struct { uint8_t reg, val; } s_critical_cfg[] = {
     { ES8388_DACCONTROL4, 0x00 }, { ES8388_DACCONTROL5, 0x00 },
     { ES8388_DACCONTROL16,0x00 }, { ES8388_DACCONTROL17,0xb8 },
     { ES8388_DACCONTROL20,0xb8 }, { ES8388_DACCONTROL21,0x80 },
-    { ES8388_DACCONTROL24,0x14 }, { ES8388_DACCONTROL25,0x14 },  // HP ~ -15 dB
-    { ES8388_DACCONTROL26,0x17 }, { ES8388_DACCONTROL27,0x17 },  // line ~ -10.5 dB
+    { ES8388_DACCONTROL24,ES8388_HP_VOL_MAX },   { ES8388_DACCONTROL25,ES8388_HP_VOL_MAX },    // HP ~ -15 dB
+    { ES8388_DACCONTROL26,ES8388_LINE_VOL_MAX }, { ES8388_DACCONTROL27,ES8388_LINE_VOL_MAX },  // line ~ -10.5 dB
 };
 
 esp_err_t es8388_verify_config(es8388_service_cb_t service)
