@@ -36,6 +36,7 @@ hardware/**/gerbers/
 hardware/**/pcbway-gerbers/
 hardware/**/jlcpcb/
 hardware/**/analysis/
+hardware/**/datasheets/
 
 # Python
 tools/__pycache__/
