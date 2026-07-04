@@ -115,6 +115,34 @@ command). SD already has a 100k pulldown, so leaving it undriven keeps the amp
 off through resets and stops the reboot-then-cook cycle while the rest of the
 board is validated.
 
+## Mode A / Mode B (battery saver) transitions
+
+Mode B is the full DSP path; Mode A is analog bypass with the digital path
+stopped and the CPU in a duty-cycled light sleep (~200 ms wake to poll the VOL
+wheel), ~40 mA at the board vs ~80 mA in Mode B at matched loudness (confirmed on
+the first board, 2026-07-04). Bidirectional transitions tested clean: B -> A via
+the `mode a` console command, A -> B via the R-button hold, which rebuilds
+I2S/MCLK, resumes the pipeline, and restores the codec to DSP.
+
+Two findings:
+
+- Mode A speaker level overdriven and louder than Mode B (fixed). The Mode A
+  analog-volume ceilings (`ES8388_LINE_VOL_MAX` / `ES8388_HP_VOL_MAX` in
+  es8388.c) were stale relative to the tuned Mode B driver levels: line out was
+  0x21 (+4.5 dB) and HP 0x0e (-24 dB), while Mode B uses 0x17 (-10.5 dB) and 0x14
+  (-15 dB). At full wheel Mode A hit those ceilings, so switching B -> A jumped
+  the loudness and drove the speaker into the amp's clipping. Fixed by making the
+  ceilings the single source of truth for the tuned levels, shared by
+  es8388_init() and the verify table, so the two modes stay in lockstep.
+
+- The console cannot exit Mode A over serial (by design, not a bug). In Mode A
+  the ESP32 is in light sleep ~98% of the time; the UART is not a wake source and
+  the console task never gets scheduled, so a serial `mode b` does not land. The
+  real exit is the physical R-button hold (an ext1 wake that mode_a_run() handles;
+  the loop re-checks the mode preference each wake so a console/BLE change only
+  lands "if it happens to fall in a wake window"). A cabled `reset` also returns
+  to Mode B since the mode preference is not persisted unless saved.
+
 ## Antenna: U1 uses MHF III, not U.FL (found on the first production run)
 
 The `-02U` module has an **external antenna connector**, not an on-board PCB
