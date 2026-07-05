@@ -263,6 +263,22 @@ static int cmd_unplug(int argc, char **argv)
     return 0;
 }
 
+// `autoconnect on|off`: Bluetooth connect-on-boot policy. off (default) = manual:
+// on boot the radio comes up idle and the device waits in LOCAL_ONLY; nothing
+// pages/inquires until a Connect/Pair (R) hold. on = auto: re-page bonded sinks
+// (or pair if none) on boot. Takes effect at the next boot. Persist with `save`.
+static int cmd_autoconnect(int argc, char **argv)
+{
+    if (argc != 2 || (strcmp(argv[1], "on") && strcmp(argv[1], "off"))) {
+        printf("usage: autoconnect on|off\n"); return 1;
+    }
+    bool on = (strcmp(argv[1], "on") == 0);
+    settings_set_auto_connect(on);
+    printf("auto-connect %s (takes effect next boot; `save` to persist)\n",
+           on ? "ON (page/pair on boot)" : "OFF (wait for Connect/Pair hold)");
+    return 0;
+}
+
 // `wheel [on|off]`: with no arg, print the live VOL-wheel reading (GBA VR2
 // wiper on GPIO39, VCC-referenced). With on|off, enable/disable the wheel
 // driving volume. Default on (the wheel is the volume control); `wheel off`
@@ -434,8 +450,9 @@ static int cmd_get(int argc, char **argv)
            s.eq_bt_enabled ? "on" : "off",
            s.eq_bt_bass_db, s.eq_bt_mid_db, s.eq_bt_treble_db);
     printf("sfx=%s [%+d dB]\n", s.sfx_enabled ? "on" : "off", s.sfx_level_db);
-    printf("mode=%c  unplug_to_B=%s\n",
-           s.mode_a ? 'A' : 'B', s.unplug_to_b ? "on" : "off");
+    printf("mode=%c  unplug_to_B=%s  auto_connect=%s\n",
+           s.mode_a ? 'A' : 'B', s.unplug_to_b ? "on" : "off",
+           s.auto_connect ? "on" : "off");
     printf("hold (ms): connect=%u pair=%u mode=%u exit=%u\n",
            s.hold_connect_ms, s.hold_pair_ms, s.hold_mode_ms, s.hold_mode_exit_ms);
     return 0;
@@ -457,6 +474,7 @@ static void register_cmds(void)
         { .command = "mode",  .help = "Set operating mode (sticky): mode a|b (a=bypass/battery, b=DSP)", .func = cmd_mode },
         { .command = "codecmode", .help = "Raw codec poke (no orchestration): codecmode a|b", .func = cmd_codecmode },
         { .command = "unplug",.help = "On HP unplug in Mode A: unplug stay|b", .func = cmd_unplug },
+        { .command = "autoconnect", .help = "BT connect-on-boot: autoconnect on|off (off=wait for R hold)", .func = cmd_autoconnect },
         { .command = "hold",  .help = "R-button hold thresholds (ms): hold [connect pair mode exit]", .func = cmd_hold },
         { .command = "wheel", .help = "VOL wheel drives volume: wheel on|off",  .func = cmd_wheel },
         { .command = "batt",  .help = "Read battery rail voltage: batt",         .func = cmd_batt },

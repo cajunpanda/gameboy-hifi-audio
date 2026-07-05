@@ -17,7 +17,7 @@
 // "dsp"). Bump GBHIFI_SETTINGS_VERSION when the struct layout changes; an
 // older/absent blob falls back to the Kconfig-seeded defaults.
 
-#define GBHIFI_SETTINGS_VERSION 8
+#define GBHIFI_SETTINGS_VERSION 9
 
 typedef struct {
     uint16_t version;          // == GBHIFI_SETTINGS_VERSION
@@ -76,6 +76,13 @@ typedef struct {
     // On a wired-HP unplug while in Mode A: false = stay in Mode A (speaker in
     // battery mode); true = switch to Mode B (speaker uses full DSP).
     bool     unplug_to_b;
+    // Bluetooth connect-on-boot policy. false (default) = manual: the radio comes
+    // up idle and the device waits in LOCAL_ONLY; no page/inquiry happens until
+    // the user holds the Connect/Pair (R) button to start it. true = auto: on
+    // boot, immediately re-page bonded sinks (or enter pairing if none bonded),
+    // the legacy behavior. app_sm reads this at boot; a control surface only
+    // flips the flag.
+    bool     auto_connect;
 
     // ---- R-button hold-menu thresholds (ms) ----
     // The Connect/Pair (R) button drives a chime-guided hold menu: held past
@@ -118,6 +125,7 @@ esp_err_t settings_set_nr(uint16_t hpf_hz, uint16_t lpf_hz, uint16_t notch_hz,
 esp_err_t settings_set_nr_gate(int8_t thresh_db, uint8_t range_db);
 esp_err_t settings_set_mode_a(bool mode_a);
 esp_err_t settings_set_unplug_to_b(bool unplug_to_b);
+esp_err_t settings_set_auto_connect(bool auto_connect);
 // Set the R-button hold-menu thresholds (ms). Clamped + re-ordered so
 // connect <= pair <= mode (sanitise()). mode_exit is independent.
 esp_err_t settings_set_hold_timings(uint16_t connect_ms, uint16_t pair_ms,

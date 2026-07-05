@@ -590,6 +590,29 @@ static void enter(app_state_t next)
         if (prev == ST_CONNECTED_IDLE || prev == ST_STREAMING) {
             CUE(SFX_SYNTH_DISCONNECT);
         }
+        // Auto-connect gate. Fresh paging of bonded sinks is an automatic BT
+        // action, so with auto_connect off we don't initiate it from an idle
+        // start. Two entries are exempt and always (re)connect regardless of the
+        // setting:
+        //   - prev == ST_LOCAL_ONLY: the user explicitly asked, via a Connect hold
+        //     (handle_local_only EV_BTN_CP_CONNECT).
+        //   - prev == ST_CONNECTED_IDLE / ST_STREAMING: a link the user already
+        //     had dropped (e.g. mid-stream), so auto-reconnect it. The reconnect
+        //     runs via the deferred timer below, and STANDBY_TIMEOUT falls to
+        //     LOCAL_ONLY if it can't get the sink back.
+        // Every other automatic entry (Mode A exit, a pairing-session timeout)
+        // waits in LOCAL_ONLY for a Connect/Pair hold instead of paging. Boot is
+        // gated separately in sm_task (it doesn't run this entry code).
+        {
+            gbhifi_settings_t gate_s;
+            settings_get(&gate_s);
+            if (!gate_s.auto_connect && prev != ST_LOCAL_ONLY &&
+                prev != ST_CONNECTED_IDLE && prev != ST_STREAMING) {
+                ESP_LOGI(TAG, "STANDBY: auto-connect off; to LOCAL_ONLY (await Connect/Pair hold)");
+                enter(ST_LOCAL_ONLY);
+                break;
+            }
+        }
         // When we land in STANDBY straight off a live link (the sink dropped, or
         // A2DP closed), Bluedroid is still tearing down that ACL link in the BTU
         // task. Issuing a fresh direct-page now races l2cu_release_lcb freeing the
@@ -1069,12 +1092,22 @@ static void sm_task(void *arg)
     if (boot_s.mode_a) {
         ESP_LOGI(TAG, "boot preference = Mode A; transitioning after bring-up");
         post(EV_MODE_CHANGE);
-    } else {
+    } else if (boot_s.auto_connect) {
         try_connect_or_pair();
         if (s_state == ST_STANDBY) {
             xTimerStart(s_standby_to_t, 0);
             xTimerStart(s_reconnect_t,  0);
         }
+    } else {
+        // Manual BT (default): don't page/inquire on boot. Rest in LOCAL_ONLY
+        // with the radio idle-but-initialized, carrying local GBA audio out the
+        // digital path; a Connect/Pair hold starts the link live from there (see
+        // handle_local_only). Consume the boot-arrival flag so a later
+        // user-initiated connect/pair plays its cue (there's no boot chime to
+        // stomp by the time the user holds the button).
+        ESP_LOGI(TAG, "boot: BT auto-connect off; waiting for Connect/Pair hold");
+        s_boot_arrival = false;
+        enter(ST_LOCAL_ONLY);
     }
 
     for (;;) {
@@ -1124,12 +1157,15 @@ static void sm_task(void *arg)
             continue;
         }
         // ~200 ms housekeeping tick: apply the VOL wheel, then promote a
-        // desired-vs-active mode mismatch into a transition event. Skipped while
-        // PAIRING (a bounded user flow) or DEEP_IDLE (asleep, never reached).
+        // desired-vs-active mode mismatch into a transition event. The mode check
+        // runs during PAIRING too, so a `mode a` from the console (which only sets
+        // the pref and relies on this poll) bails out of pairing immediately, same
+        // as the button's direct EV_MODE_CHANGE. Skipped only while DEEP_IDLE
+        // (asleep, never reached).
         if (ev == EV_POLL) {
             if (s_state == ST_OTA) continue;  // don't touch volume/codec mid-flash
             vol_apply_from_wheel();
-            if (s_state != ST_PAIRING && s_state != ST_DEEP_IDLE) {
+            if (s_state != ST_DEEP_IDLE) {
                 gbhifi_settings_t s;
                 settings_get(&s);
                 es8388_mode_t desired = s.mode_a ? ES8388_MODE_BYPASS
@@ -1152,8 +1188,13 @@ static void sm_task(void *arg)
             settings_get(&s);
             es8388_mode_t desired = s.mode_a ? ES8388_MODE_BYPASS
                                              : ES8388_MODE_DSP;
+            // A Mode A request from PAIRING bails out of the inquiry immediately
+            // (the enter(ST_MODE_A) -> bt_a2d_disconnect cancels it cleanly),
+            // rather than making the user wait out the pairing-session timeout.
+            // OTA is still excluded (don't interrupt a flash); Mode A no-ops if
+            // already there.
             if (desired == ES8388_MODE_BYPASS &&
-                s_state != ST_MODE_A && s_state != ST_PAIRING && s_state != ST_OTA) {
+                s_state != ST_MODE_A && s_state != ST_OTA) {
                 enter(ST_MODE_A);
                 mode_a_run();   // blocks until Mode A exits (back to STANDBY)
             } else if (desired == ES8388_MODE_DSP && s_state == ST_MODE_A) {

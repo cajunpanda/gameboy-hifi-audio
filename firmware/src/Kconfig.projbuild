@@ -352,6 +352,17 @@ menu "GameBoy HiFi Audio"
                 mode, symmetric with insertion). ON = switch to Mode B so the
                 speaker gets the full DSP path.
 
+        config GBHIFI_AUTO_CONNECT
+            bool "Auto-connect Bluetooth on boot"
+            default n
+            help
+                Bluetooth connect-on-boot policy. OFF (default) = manual: the
+                radio comes up idle and the device waits; no page/inquiry runs
+                until the user holds the Connect/Pair (R) button to start it.
+                ON = auto: on boot, immediately re-page bonded sinks (or enter
+                pairing if none bonded). Live value persists in NVS; set at
+                runtime via the console `autoconnect on|off` command or BLE.
+
     endmenu
 
 endmenu

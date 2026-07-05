@@ -508,7 +508,13 @@ esp_err_t bt_a2d_clear_bonds(void)
 esp_err_t bt_a2d_disconnect(void)
 {
     if (s_link_state == LINK_DISCOVERING) {
+        // Abort the inquiry AND neutralize the trailing DISCOVERY_STOPPED
+        // callback: clear the discovering state so gap_cb won't page a sink that
+        // was matched mid-inquiry (that page would fire an A2DP connect after
+        // we've already left PAIRING, e.g. when the user bails to Mode A).
         esp_bt_gap_cancel_discovery();
+        s_pairing_mode = false;
+        s_link_state   = LINK_IDLE;
     }
     if (s_link_state == LINK_CONNECTED || s_link_state == LINK_PAGING) {
         esp_a2d_source_disconnect(s_peer_bda);
