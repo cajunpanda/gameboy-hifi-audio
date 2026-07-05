@@ -47,14 +47,24 @@ suit you.
    mod is now searching.
 4. When it finds your headphones it connects and plays a confirmation chime.
 
-The mod remembers what it paired with. Next time you turn the GBA on it
-reconnects on its own. You only pair again when you want to add a new device.
+The mod remembers what it paired with, but it does not turn Bluetooth on by
+itself. When you turn the GBA on it starts up quietly on the speaker and wired
+jack and waits for you. To connect your saved headphones, hold R until the first
+chime (about 3 seconds) and let go; it reconnects and plays a confirmation
+chime. You only use pairing (the second chime) when you want to add a new
+device.
 
-If you have paired more than one device, the mod tries the most recently used
-one first, then cycles through the others.
+If you have paired more than one device, the first chime tries the most recently
+used one first, then cycles through the others.
 
-To force a reconnect (for example after you turned the headphones off and on),
-hold R until the first chime (about 3 seconds) and let go.
+Once you are connected, a brief dropout fixes itself. If the headphones go out
+of range or you turn them off and on, the mod reconnects on its own. It only
+gives up, and waits for you to hold R again, if it cannot get them back after a
+short while.
+
+If you prefer the mod to reconnect to your saved headphones automatically the
+moment you power on (the way it used to work), that is available as a saved
+option. It is off by default so the radio stays quiet until you ask for it.
 
 ## Wired headphones and the speaker
 
@@ -82,8 +92,10 @@ There are two operating modes.
   listening on the speaker or wired headphones and want the most battery life.
 
 Switch between them by holding R to the third chime (about 9 seconds) and
-letting go. In Battery saver there is no chime menu, so to leave it just hold R
-for about 9 seconds; the equalizer audio coming back and a chime tell you it
+letting go. This works at any time, including while the mod is searching for
+headphones: switching to Battery saver stops the search right away and does not
+make you wait. In Battery saver there is no chime menu, so to leave it just hold
+R for about 9 seconds; the equalizer audio coming back and a chime tell you it
 switched.
 
 ## The web config page
@@ -129,6 +141,12 @@ for about 10 seconds. The next time you pair, the device list starts fresh.
 **It will not connect to my headphones.**
 Put the headphones in pairing mode first, then hold R to the second chime to
 search. If it still fails, do a factory reset and pair again.
+
+**It does not reconnect by itself when I turn the GBA on.**
+That is normal. The mod waits for you so the radio stays quiet until you want it.
+Hold R to the first chime (about 3 seconds) to reconnect your saved headphones.
+If you would rather it reconnect automatically at power-on, that can be turned on
+as a saved option.
 
 **No sound from Bluetooth.**
 Check that you are in Full mode, not Battery saver. Battery saver does not
