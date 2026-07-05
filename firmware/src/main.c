@@ -9,6 +9,7 @@
 #include "esp_log.h"
 #include "esp_ota_ops.h"
 #include "esp_sleep.h"
+#include "esp_timer.h"
 #include "esp_system.h"
 #include "nvs_flash.h"
 
@@ -30,10 +31,11 @@
 
 static const char *TAG = "gbhifi";
 
-// Drain the ADC and feed the DAC one I2S block. Passed to the es8388 init/verify
-// calls so the I2S DMA stays serviced during I2C config; an unserviced DMA storms
-// the CPU and trips the watchdog. Runs before audio_pipeline_start(), so nothing
-// else touches I2S yet.
+// Drain the ADC and feed the DAC one I2S block. Passed to es8388_init() so the
+// I2S DMA stays serviced during I2C config; an unserviced DMA storms the CPU and
+// trips the watchdog. Runs before audio_pipeline_start(), so nothing else touches
+// I2S yet. It's also a raw RX->TX loopback, so the GBA's analog feed already
+// passes to the DAC during codec config (inaudible until the amp is unmuted).
 static void codec_service_i2s(void)
 {
     static int32_t buf[256 * 2];
@@ -184,13 +186,18 @@ void app_main(void)
 
     // Bring up the I2S master bus first so the ES8388 sees MCLK before its I2C
     // config runs (the codec won't start its state machine without MCLK). Settle,
-    // configure over I2C, then verify-and-fix any writes corrupted by MCLK
-    // coupling on the bus.
+    // then configure over I2C. The production PCB's series-R + short MCLK routing
+    // keep the writes clean, so no read-back verify pass is needed.
     ESP_ERROR_CHECK(i2s_codec_init());
     ESP_ERROR_CHECK(i2s_codec_start());
     vTaskDelay(pdMS_TO_TICKS(30));
     ESP_ERROR_CHECK(es8388_init(codec_service_i2s));
-    es8388_verify_config(codec_service_i2s);   // not fatal if it cannot converge
+
+    // Codec configured; unmute the speaker amp now, before the DSP pipeline and
+    // the deferred BT bring-up. The amp comes up on the audio path alone so the
+    // Game Boy power-on chime plays the earliest possible moment; app_sm_start()
+    // re-evaluates the amp against the real HP/state once it runs.
+    app_sm_speaker_early_on();
 
     // DSP subsystem, ready before the pipeline task calls into it: settings holds
     // the parameter snapshot, fs mounts the clip store, sfx owns the cue feeder,
@@ -198,11 +205,56 @@ void app_main(void)
     ESP_ERROR_CHECK(settings_init());
     ESP_ERROR_CHECK(fs_init());
     ESP_ERROR_CHECK(sfx_init());
+
+    // Seed the speaker volume from the wheel before dsp_init reads it, so the very
+    // first audio block comes out at the wheel setting. Otherwise the wheel isn't
+    // read until app_sm_start()'s poll (behind the BT hold-off below), and a
+    // wheel-down user hears the stored default volume blare on every power-cycle.
+    app_sm_prime_volume();
+
     ESP_ERROR_CHECK(dsp_init());
+
+    // Seed the local-path EQ profile (Speaker vs Headphone) from the HP state
+    // app_sm_speaker_early_on() already sampled, so the startup chime is voiced for
+    // the live output from its first block. sm_task re-applies this on the live pin.
+    dsp_set_hp_plugged(app_sm_hp_plugged());
+
+    // Mod startup chime: play our own clean, complete chime clip over a muted live
+    // passthrough, so the user hears one full chime instead of the truncated live
+    // GBA chime (the codec/amp miss its first ~0.9 s of boot). dsp_begin_intro()
+    // mutes the passthrough until the clip ends; sfx_trigger_clip() streams it.
+    // Gated on sfx_enabled for now; a future phase adds a dedicated "startup chime"
+    // setting so the user can turn this off and let the GBA's own chime play through
+    // -- which is simply this block NOT running (the passthrough already carries the
+    // real chime). Both calls run before audio_pipeline_start(), i.e. before the
+    // audio task exists, so the passthrough is muted from its first block.
+    gbhifi_settings_t boot_s;
+    settings_get(&boot_s);
+    bool use_mod_chime = boot_s.sfx_enabled;   // future: && boot_s.startup_chime
+    if (use_mod_chime) {
+        dsp_begin_intro();
+        sfx_trigger_clip("startup");
+    }
 
     ESP_ERROR_CHECK(audio_pipeline_start());
 
     ESP_ERROR_CHECK(buttons_init());
+
+    // Confirm a pending OTA image good as soon as the audio path is up, BEFORE the
+    // BT delay below. The mod sits on the GBA's switched rail and power-cycles
+    // constantly; gating this behind the ~3.5 s BT hold-off would let a power-cycle
+    // during that window roll back an otherwise-good image.
+    ota_confirm_image_valid();
+
+    // Defer the Bluetooth controller + radio until CONFIG_GBHIFI_BT_START_DELAY_MS
+    // after power-on. The audio path above is already streaming, so the chime plays
+    // clean before the radio's inrush current + RF noise land. Measured from boot
+    // (esp_timer counts from chip start), so the hold-off shrinks by however long
+    // the audio bring-up already took.
+    int64_t elapsed_ms = esp_timer_get_time() / 1000;
+    if (elapsed_ms < CONFIG_GBHIFI_BT_START_DELAY_MS) {
+        vTaskDelay(pdMS_TO_TICKS(CONFIG_GBHIFI_BT_START_DELAY_MS - elapsed_ms));
+    }
 
     ESP_ERROR_CHECK(bt_a2d_init());
 
@@ -221,9 +273,6 @@ void app_main(void)
     // UART REPL control surface, started last. The web UI (BLE config) drives the
     // same settings_* API. Needs an interactive serial monitor for input.
     ESP_ERROR_CHECK(console_start());
-
-    // Init reached without a panic: confirm a pending OTA image good.
-    ota_confirm_image_valid();
 
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(60000));

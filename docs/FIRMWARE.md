@@ -49,12 +49,17 @@ survives the board reconnecting.
 python3 tools/serial_proxy.py monitor       # start the proxy (run once)
 tail -f /tmp/gba_serial.log                  # watch the output
 python3 tools/serial_proxy.py flash --env prod       # pause, build, upload, resume
+python3 tools/serial_proxy.py flash --env prod --fs  # ...and reflash the clip image
 python3 tools/serial_proxy.py reset
 python3 tools/serial_proxy.py stop
 ```
 
 The `flash` subcommand pauses the proxy, builds and uploads, then resumes and
 resets the board, so you do not have to release and reclaim the port by hand.
+Add `--fs` when you have changed anything under `firmware/data/` (e.g. the startup
+chime): it also builds the LittleFS `storage` image and writes it to its partition
+offset, which a plain `flash` (app only) leaves stale. See "Partitions and the
+clip image" below.
 
 ## Configuration
 
@@ -80,13 +85,21 @@ firmware can update itself over Bluetooth), an NVS area for settings and
 Bluetooth bonds, and a LittleFS `storage` partition for sound clips.
 
 `pio run -t upload` flashes only the app. It does not flash the LittleFS clip
-image. To load the clips in `firmware/data/`, build the `littlefs_storage_bin`
-target and write it to the `storage` offset from `partitions.csv` (currently
-`0x420000`):
+image, so a plain flash leaves whatever clips were already on the board. The
+easiest way to (re)load the clips in `firmware/data/` is:
 
 ```sh
-# build the image, then:
-esptool.py write_flash 0x420000 .pio/build/prod/littlefs.bin
+python3 tools/serial_proxy.py flash --env prod --fs
+```
+
+`--fs` builds the `littlefs_storage_bin` target (which owns the exact
+fs-size / block-size / name-max the firmware mounts with) and writes the image to
+the `storage` offset read from `flasher_args.json` (currently `0x420000`). To do
+it by hand instead:
+
+```sh
+# build the image via the target, then:
+esptool.py write_flash 0x420000 .pio/build/prod/storage.bin
 ```
 
 The first flash on a fresh board must be a full cabled flash: bootloader,
@@ -94,8 +107,11 @@ partition table, app into the first slot, an erased otadata, and the clip image.
 After that, updates can go over Bluetooth.
 
 The clips themselves are in the GSFX format. Use `tools/make_clip.py` to author
-them: it converts a 16-bit WAV to a clip, or generates the built-in startup
-cue. The web config page can also upload clips to a running board.
+them: `from-wav` converts a 16-bit WAV to a clip (downmix + optional resample),
+or `gen-startup` generates a synth test cue. `startup.gsfx` is the boot chime the
+mod plays over a muted passthrough (see "Init order"); to replace it, author a new
+`firmware/data/startup.gsfx` and reflash with `--fs`. The web config page can also
+upload clips to a running board.
 
 ## Source layout
 
@@ -145,13 +161,35 @@ so there is no asynchronous resampling.
 
 ### Init order
 
-`app_main` brings subsystems up in a fixed order: log the wake cause and gate a
-button wake, boot-mute the speaker amp, init NVS, bring up the I2S clocks and
-then the codec over I2C, start the DSP subsystem and the audio pipeline, init
-the buttons, bring up Bluetooth (A2DP source) and then the BLE config server,
-handle a possible factory reset, start the state machine, and finally start the
-console. The order matters; read the comments in `main.c` before reordering
-anything.
+`app_main` is ordered to get **audio out as fast as possible** and to keep the
+Bluetooth radio off the Game Boy power-on chime. The mod boots on the GBA's
+switched rail, so every power-cycle re-runs this and the chime is the first thing
+the user hears.
+
+The sequence: log the wake cause and gate a button wake, boot-mute the speaker
+amp, init NVS, bring up the I2S clocks and then the codec over I2C. As soon as the
+codec is configured, `app_sm_speaker_early_on()` samples HP-detect and unmutes the
+speaker amp (only if no headphones are plugged) — well before the state machine
+would otherwise. Then the DSP subsystem comes up: `app_sm_prime_volume()` seeds
+the speaker volume from the wheel *before* `dsp_init()` reads it (so a wheel-down
+user doesn't get a default-volume blare), and the local EQ profile is seeded from
+the sampled HP state. The startup chime is then triggered — `dsp_begin_intro()`
+mutes the live passthrough while `sfx_trigger_clip("startup")` plays the mod's own
+clean, complete chime (so it isn't doubled with the truncated live GBA chime the
+codec misses during boot); this is gated so a future setting can disable it and
+let the GBA's own chime through. The audio pipeline and buttons start, and the
+pending OTA image is confirmed good.
+
+Only then is Bluetooth deferred: `app_main` waits until
+`CONFIG_GBHIFI_BT_START_DELAY_MS` after power-on before `bt_a2d_init()` (the
+controller + radio) and the BLE config server, so the radio's inrush current and
+RF noise land after the chime. Finally the factory-reset check, the state machine,
+and the console start. The order matters; read the comments in `main.c` before
+reordering anything.
+
+There is no codec read-back verify pass. It existed for the noisy breadboard
+bring-up; the production PCB's series-R + short MCLK routing keep the I2C config
+writes clean, so `es8388_init()` alone is enough.
 
 ### State machine
 

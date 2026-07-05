@@ -119,6 +119,18 @@ menu "GameBoy HiFi Audio"
                 Bluetooth GAP inquiry length while pairing, in 1.28 s units
                 (10 ~ 12.8 s).
 
+        config GBHIFI_BT_START_DELAY_MS
+            int "Delay before Bluetooth bring-up (milliseconds since boot)"
+            default 3500
+            range 0 10000
+            help
+                Hold off bt_a2d_init() (BT controller + radio) until this many
+                milliseconds after power-on, measured from boot. The audio path
+                (codec, DSP pipeline, speaker amp) comes up first and independently,
+                so the Game Boy power-on chime plays clean before the radio's
+                inrush + RF noise hit. app_sm_start() and the connect/pairing
+                campaign follow the delayed BT init. 0 = start BT immediately.
+
     endmenu
 
     config GBHIFI_BLE_CONFIG

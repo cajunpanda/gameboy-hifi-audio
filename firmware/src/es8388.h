@@ -17,11 +17,10 @@
 // i2s_codec_start() so the chip already sees MCLK when it is configured.
 //
 // The codec must be configured with MCLK live (its state machine won't start
-// otherwise), but the MCLK (~22.6 MHz at the pin) couples into SDA/SCL and
-// corrupts a few config writes. So the order is:
-//   i2s_codec_start() -> es8388_init() -> es8388_verify_config(service)
-// where verify re-writes any register the coupling clobbered. A ~150 ohm series
-// R on MCLK + short MCLK routing keeps the corruption light.
+// otherwise). MCLK (~22.6 MHz at the pin) can couple into SDA/SCL, but on the
+// production PCB the ~150 ohm series R on MCLK + short MCLK routing keep the I2C
+// writes clean, so es8388_init() alone configures reliably. (A read-back verify
+// pass existed for the noisy breadboard bring-up; the PCB doesn't need it.)
 
 // Mode A vs Mode B. Orthogonal to which output the headphone jack selects.
 typedef enum {
@@ -38,24 +37,17 @@ typedef enum {
 } es8388_out_t;
 
 // I2S-DMA service callback: drains the ADC and feeds the DAC one I2S block.
-// es8388_init()/es8388_verify_config() invoke it between I2C ops so the I2S DMA
-// stays serviced while the codec is configured with MCLK live; an unserviced DMA
-// storms the CPU and trips the interrupt watchdog. Pass NULL to skip (only safe
-// if I2S isn't running, or something else is draining it).
+// es8388_init() invokes it between I2C ops so the I2S DMA stays serviced while
+// the codec is configured with MCLK live; an unserviced DMA storms the CPU and
+// trips the interrupt watchdog. Pass NULL to skip (only safe if I2S isn't
+// running, or something else is draining it).
 typedef void (*es8388_service_cb_t)(void);
 
 // One-shot: bring up the I2C bus, probe the chip, and load the default register
 // set (Mode B, ADC from line-in, DAC to both outputs, I2S slave 24/32-bit). Call
 // after i2s_codec_start() (the codec needs MCLK). Returns ESP_OK with the codec
-// configured and unmuted. Follow with es8388_verify_config() to scrub
-// MCLK-coupling corruption.
+// configured and unmuted.
 esp_err_t es8388_init(es8388_service_cb_t service);
-
-// Re-read the critical config registers and re-write any that don't match what
-// es8388_init() wrote, scrubbing out MCLK-coupling corruption. Call after
-// es8388_init(). Returns ESP_OK once the config reads back clean, ESP_FAIL if it
-// never converges.
-esp_err_t es8388_verify_config(es8388_service_cb_t service);
 
 // Select the analog signal path (Mode A bypass vs Mode B ADC<->DAC).
 esp_err_t es8388_set_mode(es8388_mode_t mode);

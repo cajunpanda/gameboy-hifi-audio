@@ -132,8 +132,8 @@ Two findings:
   0x21 (+4.5 dB) and HP 0x0e (-24 dB), while Mode B uses 0x17 (-10.5 dB) and 0x14
   (-15 dB). At full wheel Mode A hit those ceilings, so switching B -> A jumped
   the loudness and drove the speaker into the amp's clipping. Fixed by making the
-  ceilings the single source of truth for the tuned levels, shared by
-  es8388_init() and the verify table, so the two modes stay in lockstep.
+  ceilings the single source of truth for the tuned levels, shared by es8388_init()
+  and es8388_set_output_volume(), so the two modes stay in lockstep.
 
 - The console cannot exit Mode A over serial (by design, not a bug). In Mode A
   the ESP32 is in light sleep ~98% of the time; the UART is not a wake source and
@@ -142,6 +142,44 @@ Two findings:
   the loop re-checks the mode preference each wake so a console/BLE change only
   lands "if it happens to fall in a wake window"). A cabled `reset` also returns
   to Mode B since the mode preference is not persisted unless saved.
+
+## Boot latency and the startup chime
+
+The mod boots on the GBA's switched rail, so the Game Boy power-on chime is the
+first thing the user hears every power-cycle. Two problems on the first board, both
+addressed 2026-07-05:
+
+- **The mod stomped the chime with its own connect/pairing cue.** On boot the state
+  machine reconnects a bonded sink (or enters pairing) and played the CONNECT /
+  PAIRING synth cue right over the chime. Fixed with a one-shot `s_boot_arrival`
+  latch in app_sm.c that suppresses only the first arrival cue after power-on; later
+  reconnects (mid-session drop) still cue.
+
+- **The chime's head was clipped by boot latency.** Nothing reaches the speaker
+  until the codec + pipeline + amp are up. Originally the amp was unmuted inside
+  `app_sm_start()` at ~2.8 s, behind the ~1.3 s Bluetooth init, so the first ~2 s of
+  the chime was lost. Reworked the boot order (see FIRMWARE.md "Init order") to get
+  audio out ASAP: unmute the amp right after `es8388_init()` (HP-aware), drop the
+  codec read-back verify (a breadboard-era artifact; the PCB's series-R + short MCLK
+  routing keep I2C writes clean), which together bring first audio to ~0.9 s.
+
+That still clips the head, so the mod now plays its **own** copy of the chime: a
+GSFX clip (`firmware/data/startup.gsfx`, a recording of the AGB chime) triggered at
+boot with the live passthrough muted for the clip's duration (`dsp_begin_intro()`),
+so there's no doubling with the truncated live chime. The clip follows the volume
+wheel and routes to the live output (speaker vs headphones). It's gated so a future
+setting can disable it and let the GBA's own chime play through untouched. The clip
+lives in the LittleFS `storage` partition — reflash it with `serial_proxy.py flash
+--fs`, not a plain `flash`.
+
+Related fixes made in the same pass:
+
+- **Reboot volume blare.** The VOL wheel was only read by app_sm's poll, now behind
+  the BT hold-off, so early audio played at the stored default. `app_sm_prime_volume()`
+  now reads the wheel and seeds the DSP volume before the first audio block.
+- **Bluetooth start deferred** to `CONFIG_GBHIFI_BT_START_DELAY_MS` (default 3.5 s)
+  after power-on, so the radio's inrush current and RF noise land after the chime
+  rather than during it.
 
 ## Audio noise floor and reduction
 

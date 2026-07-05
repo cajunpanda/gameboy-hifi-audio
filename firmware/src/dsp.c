@@ -76,6 +76,24 @@ static float    s_bt_vol_target = 1.0f;  // bluetooth volume gain target
 static float    s_bt_cur_gain = 1.0f;    // smoothed bluetooth volume
 static float    s_sfx_gain = 0.0f;       // linear cue-mix gain (0 = sfx disabled)
 
+// Boot startup-chime intro. While the startup clip plays, the live GBA passthrough
+// (program) is muted so the clean full chime plays alone -- no doubling with the
+// truncated live chime the codec picks up once the amp comes on -- and the chime
+// tracks the volume wheel instead of sitting at the fixed cue level. s_intro_prog
+// runs 0 (program muted, chime at wheel volume) during the intro and ramps to 1
+// (program live, cues at the fixed feedback level) when the clip ends. Default 1.0
+// means "no intro": normal operation is byte-for-byte unchanged. The latch is
+// armed by dsp_begin_intro() before the audio task starts, then advanced only by
+// the audio task in dsp_process_local(), so no locking is needed.
+#define INTRO_RELEASE   0.0006f   // ~38 ms per-sample ramp back to passthrough at chime end
+#define INTRO_END_GAP   12        // cue-inactive blocks (~70 ms) that mark the clip done (tolerates FIFO underruns)
+#define INTRO_START_MAX 260       // ~1.5 s: if the clip never starts (missing file), give up and unmute
+static bool  s_intro_active   = false;   // arming latch (clip in progress)
+static bool  s_intro_cue_seen = false;   // the clip actually started
+static int   s_intro_gap      = 0;       // consecutive cue-inactive blocks since start
+static int   s_intro_blocks   = 0;       // blocks since arming (start-timeout)
+static float s_intro_prog     = 1.0f;    // smoothed program/chime-mode gain (1 = normal)
+
 static inline int16_t sat16(float x)
 {
     if (x > 32767.0f)  x = 32767.0f;
@@ -205,6 +223,19 @@ void dsp_set_hp_plugged(bool plugged)
     }
 }
 
+void dsp_begin_intro(void)
+{
+    // Arm the startup-chime intro: mute the live passthrough from the first block so
+    // the startup clip plays alone, until the clip ends (or never starts). Call
+    // before audio_pipeline_start() -- i.e. before the audio task exists -- so this
+    // write is not concurrent with dsp_process_local()'s reads.
+    s_intro_active   = true;
+    s_intro_cue_seen = false;
+    s_intro_gap      = 0;
+    s_intro_blocks   = 0;
+    s_intro_prog     = 0.0f;   // program muted immediately (audio just started; no click)
+}
+
 void dsp_set_gate_mute_cb(void (*cb)(bool muting))
 {
     s_gate_mute_cb = cb;
@@ -286,13 +317,36 @@ void dsp_process_local(int16_t *stereo, size_t frames)
     // stay audible regardless of volume). The cue was rendered once for this block
     // by sfx_generate_block(); the BT path mixes the same samples.
     const float *cue = (s_sfx_gain > 0.0f && sfx_cue_active()) ? sfx_cue() : NULL;
+
+    // Startup-chime intro latch (once per block): hold the passthrough muted until
+    // the startup clip finishes -- cue inactive for INTRO_END_GAP blocks after it
+    // started -- or bail if it never started (missing clip). s_intro_prog ramps
+    // toward intro_target in the per-sample loop for a click-free hand-back.
+    float intro_target = 1.0f;
+    if (s_intro_active) {
+        if (cue)                  { s_intro_cue_seen = true; s_intro_gap = 0; }
+        else if (s_intro_cue_seen) s_intro_gap++;
+        bool done  = s_intro_cue_seen && s_intro_gap >= INTRO_END_GAP;
+        bool never = !s_intro_cue_seen && s_intro_blocks >= INTRO_START_MAX;
+        if (done || never) s_intro_active = false;
+        s_intro_blocks++;
+        intro_target = s_intro_active ? 0.0f : 1.0f;
+    }
+
     for (size_t i = 0; i < frames; i++) {
         s_cur_gain += (s_vol_target - s_cur_gain) * VOL_SMOOTH;
         float gc = (s_gate_target > s_gate_gain) ? GATE_ATTACK : GATE_RELEASE;
         s_gate_gain += (s_gate_target - s_gate_gain) * gc;
-        float c = cue ? s_sfx_gain * cue[i] : 0.0f;
-        stereo[i * 2]     = sat16(l[i] * s_cur_gain * s_gate_gain + c);
-        stereo[i * 2 + 1] = sat16(r[i] * s_cur_gain * s_gate_gain + c);
+        s_intro_prog += (intro_target - s_intro_prog) * INTRO_RELEASE;
+        // Program muted while s_intro_prog -> 0; the cue follows the wheel during the
+        // intro (s_cur_gain) and blends to the fixed feedback level (s_sfx_gain) as
+        // s_intro_prog -> 1. At the default s_intro_prog = 1 this is the original mix.
+        float prog_g = s_cur_gain * s_gate_gain * s_intro_prog;
+        float c = cue ? s_sfx_gain * (s_cur_gain + (1.0f - s_cur_gain) * s_intro_prog)
+                            * cue[i]
+                      : 0.0f;
+        stereo[i * 2]     = sat16(l[i] * prog_g + c);
+        stereo[i * 2 + 1] = sat16(r[i] * prog_g + c);
     }
 }
 

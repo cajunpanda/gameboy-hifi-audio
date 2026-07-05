@@ -129,6 +129,12 @@ static TimerHandle_t s_poll_t       = NULL;  // ~200 ms VOL-wheel + mode-change 
 
 static app_state_t s_state = ST_STANDBY;
 
+// One-shot: suppress the arrival cue (CONNECT / PAIRING) for the very first
+// connect or pairing after power-on, so the mod doesn't beep over the Game Boy
+// boot chime. Consumed at that first arrival; later reconnects (e.g. after a
+// mid-session sink drop) cue normally.
+static bool s_boot_arrival = true;
+
 // Active codec path. Mirrors the ES8388 mode the hardware is actually in.
 // es8388_init() leaves it in DSP, so we boot DSP and the mode-change poll drives
 // it toward the sticky settings.mode_a preference.
@@ -252,6 +258,8 @@ static void pam_init(void)
 
 static void vol_adc_init(void)
 {
+    if (s_vol_adc) return;   // already primed early (app_sm_prime_volume); ADC1
+                             // unit can only be created once, re-creating errors.
     adc_oneshot_unit_init_cfg_t unit_cfg = { .unit_id = ADC_UNIT_1 };
     if (adc_oneshot_new_unit(&unit_cfg, &s_vol_adc) != ESP_OK) {
         ESP_LOGW(TAG, "VOL ADC init failed; wheel disabled");
@@ -427,6 +435,23 @@ void app_sm_set_wheel_enabled(bool enabled)
     ESP_LOGI(TAG, "VOL wheel %s", enabled ? "enabled" : "disabled");
 }
 
+void app_sm_prime_volume(void)
+{
+    // Bring up the ADC and seed the speaker volume from the wheel BEFORE the first
+    // audio block, so boot audio starts at the wheel setting instead of the stored
+    // default. Without this the wheel isn't read until app_sm_start()'s poll (now
+    // behind the BT hold-off, seconds out), and a wheel-down user hears the default
+    // volume blare on every power-cycle. The codec boots in Mode B (DSP), so the
+    // seed goes to the DSP volume; app_sm_start()'s poll takes over from here.
+    vol_adc_init();
+    if (!s_wheel_enabled) return;
+    int pct = vol_read_pct();          // one unsmoothed oversampled read (~1-2 ms)
+    if (pct < 0) return;               // ADC unavailable; keep the stored default
+    s_vol_last_pct = pct;              // seed the poll's hysteresis reference
+    settings_set_volume((uint8_t)pct);
+    ESP_LOGI(TAG, "boot volume primed from wheel: %d%%", pct);
+}
+
 // ---- event source callbacks ----------------------------------------------
 
 static void on_button(btn_event_t ev)
@@ -587,13 +612,19 @@ static void enter(app_state_t next)
         // measures the whole session rather than being reset each retry.
         xTimerStart(s_pairing_to_t, 0);
         bt_a2d_start_pairing();
-        CUE(SFX_SYNTH_PAIRING);   // amp is live in PAIRING, so the user hears it
+        // amp is live in PAIRING, so the user hears it — but skip it on the
+        // power-on arrival so we don't stomp the Game Boy boot chime.
+        if (s_boot_arrival) s_boot_arrival = false;
+        else                CUE(SFX_SYNTH_PAIRING);
         break;
     case ST_CONNECTED_IDLE:
         // Connect cue on a fresh connection (from STANDBY reconnect or a
         // just-completed pairing), not on the STREAMING to CI silence drop.
         if (prev == ST_STANDBY || prev == ST_PAIRING) {
-            CUE(SFX_SYNTH_CONNECT);
+            // Skip the cue on the power-on reconnect so it doesn't stomp the
+            // Game Boy boot chime; still cue on later reconnects.
+            if (s_boot_arrival) s_boot_arrival = false;
+            else                CUE(SFX_SYNTH_CONNECT);
         }
         // Silence callback only fires on edges. Coming from a fresh connection
         // (STANDBY boot/reconnect or PAIRING just-paired), audio may already be
@@ -1181,6 +1212,34 @@ void app_sm_request_sleep(void)
     // sleep. Posted from the console task; the SM acts on it in its own context, so
     // no cross-task race on s_state.
     post(EV_FORCE_SLEEP);
+}
+
+void app_sm_speaker_early_on(void)
+{
+    // Route the boot chime + early passthrough correctly. The ES8388 DAC feeds BOTH
+    // the HP amp and the line-out -> speaker amp, so the speaker amp must come on
+    // only when NO headphones are plugged; with headphones in it stays muted and the
+    // HP amp alone drives the phones (what pam_apply() enforces steady-state).
+    // buttons_init() hasn't configured HP-detect yet, so sample it here; sm_task
+    // re-samples it later. Then pam_init() to own PIN_PAM_SD, and pam_apply() to set
+    // the HP-aware mute (s_state is still the default ST_STANDBY, gate idle).
+    gpio_config_t hp = {
+        .pin_bit_mask = 1ULL << PIN_HP_DETECT,
+        .mode         = GPIO_MODE_INPUT,
+        .pull_up_en   = GPIO_PULLUP_DISABLE,   // external 10k pull-up on the detect line
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type    = GPIO_INTR_DISABLE,
+    };
+    ESP_ERROR_CHECK(gpio_config(&hp));
+    s_hp_plugged = (gpio_get_level(PIN_HP_DETECT) == 1);
+
+    pam_init();
+    pam_apply();   // speaker amp on only if HP unplugged (full SM bring-up re-applies later)
+}
+
+bool app_sm_hp_plugged(void)
+{
+    return s_hp_plugged;
 }
 
 esp_err_t app_sm_start(void)

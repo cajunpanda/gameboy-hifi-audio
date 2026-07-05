@@ -82,8 +82,8 @@ esp_err_t es8388_read_reg(uint8_t reg, uint8_t *val)
 }
 
 // Tuned output-driver levels (6-bit field; dB = reg*1.5-45), set by ear on the
-// bench. Single source of truth: es8388_init() and the verify table use these as
-// the fixed Mode B driver levels, and es8388_set_output_volume() uses them as the
+// bench. Single source of truth: es8388_init() uses these as the fixed Mode B
+// driver levels, and es8388_set_output_volume() uses them as the
 // Mode A analog-volume ceilings at full wheel. Keeping them shared makes the
 // loudness match across a B<->A switch: the PAM8302A's ~+23.5 dB fixed gain would
 // overdrive the 8 ohm speaker at line level, so the speaker sits at -10.5 dB, and
@@ -186,7 +186,7 @@ esp_err_t es8388_init(es8388_service_cb_t service)
         // Service the I2S DMA between writes: MCLK is live and nothing else drains
         // the DMA yet, so an unserviced burst storms CPU0 and trips the interrupt
         // watchdog. This also paces the writes and lightens MCLK-coupling
-        // corruption (verify mops up the rest).
+        // corruption (the PCB's series-R + short routing keeps what's left benign).
         if (service) service();
         es8388_write_reg(seq[i].reg, seq[i].val);
     }
@@ -194,63 +194,6 @@ esp_err_t es8388_init(es8388_service_cb_t service)
     s_mode = ES8388_MODE_DSP;   // init leaves the digital ADC<->DAC path active
     ESP_LOGI(TAG, "ES8388 configured (codec mode: LIN2/RIN2 line in, DAC -> HP + line out)");
     return ESP_OK;
-}
-
-// Critical registers and the values es8388_init() wrote them, for
-// es8388_verify_config(). These must be intact for capture and playback. A few
-// registers are deliberately excluded because they read back a value other than
-// what was written (0x19 reads 0x22 not 0x32; 0x28/0x29 likewise); including them
-// would make verify never converge.
-#define ES8388_VERIFY_PASSES 10
-static const struct { uint8_t reg, val; } s_critical_cfg[] = {
-    { ES8388_CONTROL1,    0x05 }, { ES8388_CONTROL2,    0x40 },
-    { ES8388_CHIPPOWER,   0x00 }, { ES8388_ADCPOWER,    0x00 },
-    { ES8388_DACPOWER,    0x3c }, { ES8388_MASTERMODE,  0x00 },
-    { ES8388_ADCCONTROL1, 0x00 }, { ES8388_ADCCONTROL2, 0x50 },
-    { ES8388_ADCCONTROL4, 0x00 }, { ES8388_ADCCONTROL5, 0x02 },
-    { ES8388_ADCCONTROL8, 0x00 }, { ES8388_ADCCONTROL9, 0x00 },
-    { ES8388_DACCONTROL1, 0x00 }, { ES8388_DACCONTROL2, 0x02 },
-    { ES8388_DACCONTROL4, 0x00 }, { ES8388_DACCONTROL5, 0x00 },
-    { ES8388_DACCONTROL16,0x00 }, { ES8388_DACCONTROL17,0xb8 },
-    { ES8388_DACCONTROL20,0xb8 }, { ES8388_DACCONTROL21,0x80 },
-    { ES8388_DACCONTROL24,ES8388_HP_VOL_MAX },   { ES8388_DACCONTROL25,ES8388_HP_VOL_MAX },    // HP ~ -15 dB
-    { ES8388_DACCONTROL26,ES8388_LINE_VOL_MAX }, { ES8388_DACCONTROL27,ES8388_LINE_VOL_MAX },  // line ~ -10.5 dB
-};
-
-esp_err_t es8388_verify_config(es8388_service_cb_t service)
-{
-    for (int pass = 0; pass < ES8388_VERIFY_PASSES; pass++) {
-        int fixed = 0;
-        for (size_t i = 0; i < sizeof(s_critical_cfg) / sizeof(s_critical_cfg[0]); i++) {
-            // Consensus read: MCLK coupling corrupts reads too, so a single read
-            // can falsely match or falsely mismatch. Read 3x and require >=2 to
-            // match the expected value before trusting it, otherwise re-write.
-            // Service the I2S DMA between every op: MCLK is live (the codec needs
-            // it) and nothing else drains the DMA at this point, so an unserviced
-            // DMA storms CPU0 and crashes the I2C ISR; the ~5 ms block also paces
-            // the transactions.
-            int match = 0;
-            for (int r = 0; r < 3; r++) {
-                if (service) service();
-                uint8_t v = 0xff;
-                if (es8388_read_reg(s_critical_cfg[i].reg, &v) == ESP_OK &&
-                    v == s_critical_cfg[i].val) {
-                    match++;
-                }
-            }
-            if (match < 2) {
-                es8388_write_reg(s_critical_cfg[i].reg, s_critical_cfg[i].val);
-                fixed++;
-            }
-        }
-        if (fixed == 0) {
-            ESP_LOGI(TAG, "ES8388 config verified clean (%d pass%s)", pass + 1, pass ? "es" : "");
-            return ESP_OK;
-        }
-        ESP_LOGI(TAG, "ES8388 verify pass %d: re-wrote %d reg(s)", pass, fixed);
-    }
-    ESP_LOGW(TAG, "ES8388 config did not converge - marginal I2C bus / MCLK coupling");
-    return ESP_FAIL;
 }
 
 esp_err_t es8388_set_mode(es8388_mode_t mode)
@@ -264,7 +207,6 @@ esp_err_t es8388_set_mode(es8388_mode_t mode)
     // bus-recovery then trips the interrupt watchdog. A mode switch is
     // user-initiated and instantly re-runnable, so es8388_write_reg's NACK-retry
     // is enough; a corrupted write just means an audibly-wrong switch you redo.
-    // The boot config keeps its verify-and-fix.
     //
     // Transitions may click (output routing flips live); add output-mute ramps if
     // objectionable.

@@ -26,6 +26,15 @@ esp_err_t dsp_init(void);
 // profile change is click-free. Call on the HP-detect edge and at boot.
 void dsp_set_hp_plugged(bool plugged);
 
+// Arm the boot startup-chime intro: mute the live GBA passthrough on the speaker
+// path until the startup clip finishes (or never starts), so the mod's clean full
+// chime plays alone instead of doubling with the truncated live chime, and the
+// chime follows the volume wheel. Call once, before audio_pipeline_start(), only
+// when the startup clip is actually going to play. Not arming it leaves the
+// passthrough live -- which is exactly the future "let the GBA's own chime play"
+// path. No-op on normal operation; self-releases when the clip ends.
+void dsp_begin_intro(void);
+
 // Register a callback fired (from the audio task) when the noise gate transitions
 // into or out of deep silence, so app_sm can mute/unmute the speaker amp in step
 // with the gate (killing the Class-D idle noise on silence). NULL to disable.

@@ -13,6 +13,29 @@
 // returned ESP_OK. Boots directly into STANDBY.
 esp_err_t app_sm_start(void);
 
+// Bring the local-speaker amp up early, before the BT stack init + app_sm_start()
+// that would otherwise gate it seconds out. Samples HP-detect and applies the same
+// HP-aware rule as steady state: speaker amp on only when no headphones are plugged
+// (the ES8388 DAC feeds both outputs, so with HP in the speaker must stay muted).
+// Lets the Game Boy power-on chime play the earliest possible moment without
+// clipping. Idempotent with the pam_init() inside app_sm_start(), which re-evaluates
+// the amp against the live HP/gate/STREAMING state.
+void app_sm_speaker_early_on(void);
+
+// Bring up the VOL-wheel ADC and seed the speaker volume from the wheel before the
+// audio pipeline produces its first block, so boot audio starts at the wheel
+// setting rather than the stored default (which otherwise blares for a wheel-down
+// user until app_sm_start()'s poll — now behind the BT hold-off — first runs).
+// Call after settings_init() and before dsp_init(). Idempotent with the ADC init
+// inside app_sm_start().
+void app_sm_prime_volume(void);
+
+// The HP-detect state sampled by app_sm_speaker_early_on() (true = headphones
+// plugged). Lets boot bring-up seed the DSP's HP-vs-speaker EQ profile before the
+// first audio block, so the startup chime is voiced for the live output. Valid only
+// after app_sm_speaker_early_on(); sm_task re-samples the live pin once it runs.
+bool app_sm_hp_plugged(void);
+
 // Test/debug: force an immediate transition to DEEP_IDLE (ESP32 deep sleep) from
 // any awake state except PAIRING. Used by the `sleep` console command for
 // deep-sleep/wake reliability cycling. Wake sources are configured exactly as in

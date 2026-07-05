@@ -22,10 +22,12 @@ Usage:
         Own the port and tee to the log (run in a terminal or as a background
         process). Then, anywhere:
             tail -f /tmp/gba_serial.log
-  tools/serial_proxy.py flash [--env prod] [--port P] [--manual] [--no-truncate] [-- EXTRA pio args...]
+  tools/serial_proxy.py flash [--env prod] [--port P] [--manual] [--no-truncate] [--fs] [-- EXTRA pio args...]
         Pause the proxy, build+upload (to the proxy's port, or --port), resume + reset. On
         success the log is truncated for a fresh start (keeps context small; --no-truncate
         keeps it). Direct flash if no proxy.
+        `--fs` also builds + flashes the LittleFS `storage` partition (firmware/data/, e.g.
+        the startup chime); a plain flash writes only the app, leaving the filesystem stale.
         `--manual` is for a no-auto-reset adapter (3-wire): it prompts you to enter download
         mode (hold BOOT, tap EN, release BOOT) and waits, then reminds you to tap EN to boot.
         Must be run from a terminal (it needs a TTY for the prompt), e.g. with the `!` prefix.
@@ -47,9 +49,11 @@ External USB-UART adapter (e.g. to the board's UART pins for first flash or curr
   tools/serial_proxy.py tail       # follow the log in this terminal
 """
 import argparse
+import glob
 import json
 import os
 import select
+import shutil
 import signal
 import subprocess
 import sys
@@ -365,6 +369,77 @@ def cmd_monitor(a):
     Proxy(port, a.baud, a.log, not a.no_reset).run()
 
 
+def _find_tool(patterns):
+    """First existing path from a list of glob patterns (with ~ expansion), else None."""
+    for pat in patterns:
+        for c in sorted(glob.glob(os.path.expanduser(pat)), reverse=True):
+            if os.path.exists(c):
+                return c
+    return None
+
+
+def _fs_partition(build_dir):
+    """(offset, image_path) for the LittleFS 'storage' partition from flasher_args.json,
+    or None. Prefers the named 'storage' entry; falls back to scanning the offset->file
+    map for a storage/littlefs image."""
+    fa_path = os.path.join(build_dir, "flasher_args.json")
+    if not os.path.exists(fa_path):
+        return None
+    fa = json.load(open(fa_path))
+    st = fa.get("storage")
+    if isinstance(st, dict) and st.get("file"):
+        return st["offset"], os.path.join(build_dir, st["file"])
+    for off, fn in fa.get("flash_files", {}).items():
+        if "storage" in fn or "littlefs" in fn:
+            return off, os.path.join(build_dir, fn)
+    return None
+
+
+def flash_fs_image(env, port, manual=False):
+    """Build the IDF LittleFS image (firmware/data/ -> storage.bin) and flash it to the
+    storage partition. `pio ... upload` writes only the app, so the filesystem needs a
+    separate image build (the ninja `littlefs_storage_bin` target, which owns the exact
+    fs-size / block-size / name-max the firmware expects) plus an esptool write at the
+    partition offset. Runs while the proxy has already released the port. Returns 0 on ok."""
+    build_dir = os.path.join(FW_DIR, ".pio", "build", env)
+    part = _fs_partition(build_dir)
+    if not part:
+        print("[serial_proxy] --fs: no LittleFS 'storage' partition found; build the "
+              "project first (a plain `flash` once).", flush=True)
+        return 1
+    offset, img = part
+
+    ninja = _find_tool(["~/.platformio/packages/tool-ninja/ninja",
+                        "~/.platformio/packages/tool-ninja*/ninja"]) or shutil.which("ninja")
+    if not ninja:
+        print("[serial_proxy] --fs: ninja not found; cannot build the LittleFS image.", flush=True)
+        return 1
+    print("[serial_proxy] --fs: building LittleFS image from firmware/data/ ...", flush=True)
+    if subprocess.call([ninja, "-C", build_dir, "littlefs_storage_bin"]) != 0 \
+            or not os.path.exists(img):
+        print("[serial_proxy] --fs: LittleFS image build failed.", flush=True)
+        return 1
+
+    esptool = _find_tool(["~/.platformio/packages/tool-esptoolpy/esptool.py",
+                          "~/.platformio/packages/tool-esptoolpy*/esptool.py"])
+    if not esptool:
+        print("[serial_proxy] --fs: esptool.py not found under ~/.platformio.", flush=True)
+        return 1
+    fset = json.load(open(os.path.join(build_dir, "flasher_args.json"))).get("flash_settings", {})
+    # Auto-reset adapter: let esptool bounce the chip in/out of the bootloader (its
+    # default). Manual 3-wire adapter: the chip is already parked in download mode from
+    # the app flash, so don't touch reset (and leave it parked for the EN tap after).
+    reset = ["--before", "no_reset", "--after", "no_reset"] if manual else []
+    cmd = [sys.executable, esptool, "--chip", "esp32", "--port", port, "--baud", "460800"] \
+        + reset + ["write_flash",
+                   "--flash_mode", fset.get("flash_mode", "dio"),
+                   "--flash_freq", fset.get("flash_freq", "40m"),
+                   "--flash_size", fset.get("flash_size", "detect"),
+                   offset, img]
+    print("[serial_proxy] --fs: flashing %s -> %s" % (os.path.basename(img), offset), flush=True)
+    return subprocess.call(cmd)
+
+
 def cmd_flash(a):
     extra = a.extra[1:] if a.extra and a.extra[0] == "--" else a.extra
     s = load_state()
@@ -400,6 +475,11 @@ def cmd_flash(a):
     rc = 1
     try:
         rc = subprocess.call(cmd)
+        # Filesystem: `pio upload` wrote only the app; also build+flash the LittleFS
+        # 'storage' image (firmware/data/) while the port is still released. Only if the
+        # app flash succeeded, so a build break doesn't half-flash.
+        if rc == 0 and a.fs:
+            rc = flash_fs_image(a.env, port, manual=a.manual)
     finally:
         if s and _alive(s["pid"]):
             if rc == 0 and not a.no_truncate:           # fresh, small log for the new firmware (default)
@@ -488,6 +568,9 @@ def main():
                         "download mode (hold BOOT, tap EN), then remind you to tap EN to boot")
     f.add_argument("--no-truncate", action="store_true",
                    help="keep the existing log instead of truncating it for the new firmware")
+    f.add_argument("--fs", action="store_true",
+                   help="also build + flash the LittleFS 'storage' partition (firmware/data/, "
+                        "e.g. the startup chime); `pio upload` alone writes only the app")
     f.add_argument("extra", nargs=argparse.REMAINDER)
     f.set_defaults(fn=cmd_flash)
 
