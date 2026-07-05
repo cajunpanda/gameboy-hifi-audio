@@ -542,12 +542,21 @@ static esp_ble_adv_params_t s_adv_params = {
 };
 static bool s_adv_cfg_done  = false;
 static bool s_scan_rsp_done = false;
+static bool s_adv_inhibit   = false;  // `radio off`: suppress all advertising
 
 static void start_adv_if_ready(void)
 {
-    if (s_adv_cfg_done && s_scan_rsp_done) {
+    if (s_adv_cfg_done && s_scan_rsp_done && !s_adv_inhibit) {
         esp_ble_gap_start_advertising(&s_adv_params);
     }
+}
+
+void ble_config_set_advertising(bool on)
+{
+    s_adv_inhibit = !on;
+    if (on) esp_ble_gap_start_advertising(&s_adv_params);
+    else    esp_ble_gap_stop_advertising();
+    ESP_LOGI(TAG, "BLE advertising %s", on ? "on" : "off");
 }
 
 // ---- GAP (BLE) callback ---------------------------------------------------
@@ -624,7 +633,7 @@ static void gatts_cb(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if,
         s_notify_on = false;
         // Abort any in-flight OTA and let app_sm resume the audio path.
         ota_cleanup(true);
-        esp_ble_gap_start_advertising(&s_adv_params);
+        if (!s_adv_inhibit) esp_ble_gap_start_advertising(&s_adv_params);
         break;
 
     case ESP_GATTS_READ_EVT:

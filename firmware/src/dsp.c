@@ -40,6 +40,27 @@ static float s_w_bass[2][2], s_w_mid[2][2], s_w_treble[2][2];
 static float s_bt_coef_bass[5], s_bt_coef_mid[5], s_bt_coef_treble[5];
 static float s_btw_bass[2][2], s_btw_mid[2][2], s_btw_treble[2][2];
 
+// Noise-reduction filters on the local capture path (per-channel biquad state,
+// [0]=L [1]=R). Each is bypassed when its corner/center is 0 Hz; the notch is a
+// fixed deep null with tunable center + Q. Tuned per GBA via the `nr` command.
+static float s_nr_hpf[5], s_nr_lpf[5], s_nr_notch[5];
+static float s_nr_w_hpf[2][2], s_nr_w_lpf[2][2], s_nr_w_notch[2][2];
+static bool  s_nr_hpf_on, s_nr_lpf_on, s_nr_notch_on;
+
+// Downward expander / noise gate on the local path. Envelope from each block's
+// post-EQ peak; the applied gain ramps per sample with a fast attack, slow release
+// so the floor fades out in quiet passages without chattering. Off when threshold 0.
+#define GATE_ATTACK   0.02f       // ~1 ms to open
+#define GATE_RELEASE  0.0004f     // ~55 ms to close
+#define GATE_MUTE_HOLD 24         // ~140 ms of sustained silence before amp mute
+static bool  s_gate_on;
+static float s_gate_thresh_db, s_gate_range_db;
+static float s_gate_target = 1.0f;   // per-block target gain (linear)
+static float s_gate_gain   = 1.0f;   // smoothed applied gain
+static int   s_gate_silence = 0;     // consecutive silent blocks (amp-mute hold)
+static bool  s_gate_muting = false;  // speaker-amp mute state (sustained silence)
+static void (*s_gate_mute_cb)(bool) = NULL;  // notified on mute-state change
+
 static uint32_t s_last_gen = 0xffffffffu;
 // Which local-path EQ profile is live: false = Speaker EQ (HP unplugged),
 // true = Headphone EQ (HP plugged). Set by dsp_set_hp_plugged(); s_hp_dirty
@@ -125,6 +146,28 @@ static void maybe_recompute(void)
     dsps_biquad_gen_highShelf_f32(s_bt_coef_treble, F_TREBLE, (float)s.eq_bt_treble_db, Q_SHELF);
     s_bt_eq_on = s.eq_bt_enabled;
 
+    // Noise-reduction filters (local path). Normalized freq = Hz / PIPE_RATE;
+    // Butterworth HPF/LPF (Q=0.707), and a deep (-40 dB) notch at the tunable
+    // center + Q. Zero a filter's delay line while it is off so toggling it on
+    // later starts from a clean state instead of ringing on stale samples.
+    s_nr_hpf_on   = s.nr_hpf_hz   > 0 && s.nr_hpf_hz   < PIPE_RATE / 2;
+    s_nr_lpf_on   = s.nr_lpf_hz   > 0 && s.nr_lpf_hz   < PIPE_RATE / 2;
+    s_nr_notch_on = s.nr_notch_hz > 0 && s.nr_notch_hz < PIPE_RATE / 2;
+    if (s_nr_hpf_on)
+        dsps_biquad_gen_hpf_f32(s_nr_hpf, (float)s.nr_hpf_hz / PIPE_RATE, Q_SHELF);
+    else memset(s_nr_w_hpf, 0, sizeof(s_nr_w_hpf));
+    if (s_nr_lpf_on)
+        dsps_biquad_gen_lpf_f32(s_nr_lpf, (float)s.nr_lpf_hz / PIPE_RATE, Q_SHELF);
+    else memset(s_nr_w_lpf, 0, sizeof(s_nr_w_lpf));
+    if (s_nr_notch_on)
+        dsps_biquad_gen_notch_f32(s_nr_notch, (float)s.nr_notch_hz / PIPE_RATE,
+                                  -40.0f, (float)s.nr_notch_q);
+    else memset(s_nr_w_notch, 0, sizeof(s_nr_w_notch));
+
+    s_gate_on        = s.nr_gate_thresh_db < 0;   // 0 dBFS threshold = off
+    s_gate_thresh_db = (float)s.nr_gate_thresh_db;
+    s_gate_range_db  = (float)s.nr_gate_range_db;
+
     float v   = (float)s.speaker_vol_pct / 100.0f;
     float bv  = (float)s.bt_vol_pct      / 100.0f;
     s_vol_target    = v * v;
@@ -162,6 +205,11 @@ void dsp_set_hp_plugged(bool plugged)
     }
 }
 
+void dsp_set_gate_mute_cb(void (*cb)(bool muting))
+{
+    s_gate_mute_cb = cb;
+}
+
 void dsp_process_local(int16_t *stereo, size_t frames)
 {
     if (!stereo || frames == 0) return;
@@ -177,6 +225,21 @@ void dsp_process_local(int16_t *stereo, size_t frames)
         r[i] = (float)stereo[i * 2 + 1];
     }
 
+    // Noise reduction: clean the captured signal (hum high-pass, hiss low-pass,
+    // discrete-tone notch) before the voicing EQ. Each filter is skipped when off.
+    if (s_nr_hpf_on) {
+        dsps_biquad_f32(l, l, frames, s_nr_hpf, s_nr_w_hpf[0]);
+        dsps_biquad_f32(r, r, frames, s_nr_hpf, s_nr_w_hpf[1]);
+    }
+    if (s_nr_lpf_on) {
+        dsps_biquad_f32(l, l, frames, s_nr_lpf, s_nr_w_lpf[0]);
+        dsps_biquad_f32(r, r, frames, s_nr_lpf, s_nr_w_lpf[1]);
+    }
+    if (s_nr_notch_on) {
+        dsps_biquad_f32(l, l, frames, s_nr_notch, s_nr_w_notch[0]);
+        dsps_biquad_f32(r, r, frames, s_nr_notch, s_nr_w_notch[1]);
+    }
+
     // Speaker EQ per channel (each biquad keeps its own per-channel delay line).
     if (s_eq_on) {
         dsps_biquad_f32(l, l, frames, s_coef_bass,   s_w_bass[0]);
@@ -187,6 +250,36 @@ void dsp_process_local(int16_t *stereo, size_t frames)
         dsps_biquad_f32(r, r, frames, s_coef_treble, s_w_treble[1]);
     }
 
+    // Noise gate: derive this block's target gain from its post-EQ peak (a 2:1
+    // downward expander below the threshold, floored at -range), then ramp the
+    // applied gain per sample below. The program is gated; the cue is not.
+    bool silent_block = false;
+    if (s_gate_on) {
+        float pk = 0.0f;
+        for (size_t i = 0; i < frames; i++) {
+            float a = fabsf(l[i]); if (a > pk) pk = a;
+            a = fabsf(r[i]);       if (a > pk) pk = a;
+        }
+        float pk_db = (pk > 1.0f) ? 20.0f * log10f(pk / 32768.0f) : -120.0f;
+        float g_db  = (pk_db >= s_gate_thresh_db) ? 0.0f
+                      : fmaxf(-s_gate_range_db, 2.0f * (pk_db - s_gate_thresh_db));
+        s_gate_target = db_to_lin(g_db);
+        silent_block  = pk_db < s_gate_thresh_db;   // input at/under the noise floor
+    } else {
+        s_gate_target = 1.0f;
+    }
+
+    // Speaker-amp mute follows sustained silence -- input below the threshold, not
+    // how deep the expander attenuates -- so it fires even when the floor sits only
+    // a few dB down. Mute after GATE_MUTE_HOLD quiet blocks; release the instant a
+    // block exceeds the threshold. app_sm (owns PIN_PAM_SD) is called only on change.
+    if (silent_block) { if (s_gate_silence < GATE_MUTE_HOLD) s_gate_silence++; }
+    else                s_gate_silence = 0;
+    if (s_gate_mute_cb) {
+        bool m = (s_gate_silence >= GATE_MUTE_HOLD);
+        if (m != s_gate_muting) { s_gate_muting = m; s_gate_mute_cb(m); }
+    }
+
     // Digital volume (perceptual squared curve, smoothed once per frame so both
     // channels share the same gain) applied to the program only, then the shared
     // SFX cue mix (mono cue into both channels, post-volume, fixed level so cues
@@ -195,9 +288,11 @@ void dsp_process_local(int16_t *stereo, size_t frames)
     const float *cue = (s_sfx_gain > 0.0f && sfx_cue_active()) ? sfx_cue() : NULL;
     for (size_t i = 0; i < frames; i++) {
         s_cur_gain += (s_vol_target - s_cur_gain) * VOL_SMOOTH;
+        float gc = (s_gate_target > s_gate_gain) ? GATE_ATTACK : GATE_RELEASE;
+        s_gate_gain += (s_gate_target - s_gate_gain) * gc;
         float c = cue ? s_sfx_gain * cue[i] : 0.0f;
-        stereo[i * 2]     = sat16(l[i] * s_cur_gain + c);
-        stereo[i * 2 + 1] = sat16(r[i] * s_cur_gain + c);
+        stereo[i * 2]     = sat16(l[i] * s_cur_gain * s_gate_gain + c);
+        stereo[i * 2 + 1] = sat16(r[i] * s_cur_gain * s_gate_gain + c);
     }
 }
 

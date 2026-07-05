@@ -36,13 +36,14 @@ static const char *TAG = "audio";
 
 #define MAG_LOG_INTERVAL_US 1000000          // peak log once per second
 
-// One-shot waveform dump on the first read with valid (non-zero) data.
-// Bracketed by WAVEDUMP_BEGIN / WAVEDUMP_END markers; tools/plot_wavedump.py
-// captures the block over UART and plots it. Debug-only, gated behind
-// CONFIG_GBHIFI_DEBUG_WAVEDUMP (off in production builds).
-#ifdef CONFIG_GBHIFI_DEBUG_WAVEDUMP
-#define WAVEDUMP_SAMPLES 1024                // 21.3 ms at 48 kHz
-#endif
+// On-demand ADC capture for noise-floor / spectrum analysis. audio_pipeline_capture()
+// requests N raw samples; the pipeline grabs the next N frames verbatim (no arming, so
+// it captures the quiet noise floor, not just loud audio) and dumps them as CSV between
+// WAVEDUMP_BEGIN / WAVEDUMP_END markers over UART for tools/plot_wavedump.py. The dump
+// printf stalls this real-time task ~1 s, so audio hiccups during a capture (fine for a
+// bench measurement; the samples are already grabbed before the dump runs).
+#define WAVEDUMP_MAX 1024                    // 23.2 ms at 44.1 kHz
+static volatile int s_wd_request = 0;        // samples to capture on next read (0 = idle)
 
 static StreamBufferHandle_t s_pcm_stream = NULL;
 
@@ -68,6 +69,12 @@ static int  s_silent_window_count = 0;
 void audio_pipeline_set_silence_cb(audio_silence_cb_t cb)
 {
     s_silence_cb = cb;
+}
+
+void audio_pipeline_capture(int samples)
+{
+    if (samples <= 0 || samples > WAVEDUMP_MAX) samples = WAVEDUMP_MAX;
+    s_wd_request = samples;
 }
 
 bool audio_pipeline_is_silent(void)
@@ -109,15 +116,10 @@ static void pipeline_task(void *arg)
     int32_t peak_l = 0, peak_r = 0;
     size_t  fill_min = SIZE_MAX, fill_max = 0;
     int64_t window_start_us = esp_timer_get_time();
-#ifdef CONFIG_GBHIFI_DEBUG_WAVEDUMP
-    // One-shot capture: a single i2s read returns only READ_FRAMES samples, so
-    // accumulate a contiguous WAVEDUMP_SAMPLES-frame window across reads, starting
-    // at the first non-zero sample, then dump it once over UART.
-    static int32_t wd_buf[WAVEDUMP_SAMPLES * 2];
-    int  wd_count = 0;
-    bool wd_armed = false;
-    bool wavedump_done = false;
-#endif
+    // On-demand capture buffer (filled across reads, one read is only READ_FRAMES).
+    static int32_t wd_buf[WAVEDUMP_MAX * 2];
+    int wd_have = 0;      // samples captured into the active dump
+    int wd_target = 0;    // 0 = not capturing; else samples requested for this dump
 
     while (1) {
         // Cooperative park for Mode A: when stop() requests it, ack and block
@@ -142,40 +144,31 @@ static void pipeline_task(void *arg)
 
         size_t frames = bytes_read / FRAME_BYTES;
 
-#ifdef CONFIG_GBHIFI_DEBUG_WAVEDUMP
-        // One-shot wave dump: collect a contiguous WAVEDUMP_SAMPLES window across
-        // reads (one read is only READ_FRAMES) starting at the first non-zero
-        // sample, then print it once. printf (not ESP_LOG) so the host parser
-        // doesn't have to strip the "I (xxx) audio:" prefix from every line.
-        if (!wavedump_done) {
-            for (size_t i = 0; i < frames && wd_count < WAVEDUMP_SAMPLES; i++) {
-                int32_t l = stereo_buf[i * 2], r = stereo_buf[i * 2 + 1];
-                if (!wd_armed) {
-                    // Arm on real audio, not the noise floor. Noise/hum peaks
-                    // ~1.3e6 (~ -64 dBFS) in the 24-in-32 scale; game audio is
-                    // hundreds of times louder. 0x2000000 (~ -36 dBFS) sits 25x
-                    // above the noise, so the capture waits through silence and
-                    // arms on the actual signal.
-                    const int32_t WD_ARM = 0x2000000;
-                    if (l > -WD_ARM && l < WD_ARM && r > -WD_ARM && r < WD_ARM)
-                        continue;
-                    wd_armed = true;
-                }
-                wd_buf[wd_count * 2]     = l;
-                wd_buf[wd_count * 2 + 1] = r;
-                wd_count++;
+        // On-demand capture: when a request lands, grab the next wd_target frames
+        // verbatim (no arming, so the quiet noise floor is captured as-is), then dump
+        // as CSV between markers. printf (not ESP_LOG) so the host parser gets clean
+        // lines. The dump stalls this task ~1 s; audio hiccups then recovers.
+        if (wd_target == 0 && s_wd_request > 0) {
+            wd_target = s_wd_request;
+            s_wd_request = 0;
+            wd_have = 0;
+        }
+        if (wd_target > 0) {
+            for (size_t i = 0; i < frames && wd_have < wd_target; i++) {
+                wd_buf[wd_have * 2]     = stereo_buf[i * 2];
+                wd_buf[wd_have * 2 + 1] = stereo_buf[i * 2 + 1];
+                wd_have++;
             }
-            if (wd_armed && wd_count >= WAVEDUMP_SAMPLES) {
-                printf("WAVEDUMP_BEGIN n=%d fs=44100\n", WAVEDUMP_SAMPLES);
-                for (int i = 0; i < WAVEDUMP_SAMPLES; i++) {
+            if (wd_have >= wd_target) {
+                printf("WAVEDUMP_BEGIN n=%d fs=44100 fmt=24in32\n", wd_target);
+                for (int i = 0; i < wd_target; i++) {
                     printf("%ld,%ld\n",
                            (long)wd_buf[i * 2], (long)wd_buf[i * 2 + 1]);
                 }
                 printf("WAVEDUMP_END\n");
-                wavedump_done = true;
+                wd_target = 0;
             }
         }
-#endif
 
         // Convert stereo 32-bit slot data to 16-bit interleaved stereo, tracking
         // peaks for the once-per-second magnitude log. The sign-extending

@@ -17,7 +17,7 @@
 // "dsp"). Bump GBHIFI_SETTINGS_VERSION when the struct layout changes; an
 // older/absent blob falls back to the Kconfig-seeded defaults.
 
-#define GBHIFI_SETTINGS_VERSION 6
+#define GBHIFI_SETTINGS_VERSION 8
 
 typedef struct {
     uint16_t version;          // == GBHIFI_SETTINGS_VERSION
@@ -52,6 +52,20 @@ typedef struct {
 
     bool     sfx_enabled;      // allow cues (chimes/clips) to mix in (speaker only)
     int8_t   sfx_level_db;     // cue mix gain trim, -24..+6 dB (0 = authored)
+
+    // ---- Noise reduction (local capture path) ----
+    // Tunable per GBA: board revision and other mods change the noise floor. Each
+    // is a biquad applied to the captured signal before the EQ; 0 Hz disables that
+    // filter. Use the `wavedump` capture + tools/plot_wavedump.py to find the tones.
+    uint16_t nr_hpf_hz;        // high-pass corner: low-frequency hum
+    uint16_t nr_lpf_hz;        // low-pass corner: high-frequency hiss
+    uint16_t nr_notch_hz;      // notch center: a discrete tone (e.g. aliased PWM carrier)
+    uint8_t  nr_notch_q;       // notch Q (sharpness); higher = narrower
+    // Downward expander / noise gate: when the program level falls below
+    // nr_gate_thresh_db it is attenuated toward -nr_gate_range_db, so the noise
+    // floor fades out in quiet passages (kills "worst when silent"). 0 dBFS = off.
+    int8_t   nr_gate_thresh_db; // threshold, dBFS (0 = off; else negative)
+    uint8_t  nr_gate_range_db;  // max attenuation when fully closed, dB
 
     // ---- Operating-mode preferences ----
     // Sticky user choice of audio path. app_sm owns the actual transition; a
@@ -99,6 +113,9 @@ esp_err_t settings_set_eq(bool enabled, int8_t bass_db, int8_t mid_db, int8_t tr
 esp_err_t settings_set_hp_eq(bool enabled, int8_t bass_db, int8_t mid_db, int8_t treble_db);
 esp_err_t settings_set_bt_eq(bool enabled, int8_t bass_db, int8_t mid_db, int8_t treble_db);
 esp_err_t settings_set_sfx(bool enabled, int8_t level_db);
+esp_err_t settings_set_nr(uint16_t hpf_hz, uint16_t lpf_hz, uint16_t notch_hz,
+                          uint8_t notch_q);
+esp_err_t settings_set_nr_gate(int8_t thresh_db, uint8_t range_db);
 esp_err_t settings_set_mode_a(bool mode_a);
 esp_err_t settings_set_unplug_to_b(bool unplug_to_b);
 // Set the R-button hold-menu thresholds (ms). Clamped + re-ordered so

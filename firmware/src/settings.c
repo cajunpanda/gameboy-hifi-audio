@@ -42,6 +42,11 @@ static const char *TAG = "settings";
 // Hold-menu thresholds (ms): sane bounds for a deliberate, gameplay-safe gesture.
 #define HOLD_MS_MIN  (500)
 #define HOLD_MS_MAX  (15000)
+#define NR_HZ_MAX    (21000)   // noise-reduction filter freq ceiling (< Nyquist)
+#define NR_Q_MIN     (1)
+#define NR_Q_MAX     (40)
+#define GATE_DB_MIN     (-90)   // gate threshold floor, dBFS
+#define GATE_RANGE_MAX  (60)    // max gate attenuation depth, dB
 
 static SemaphoreHandle_t s_lock;
 static gbhifi_settings_t  s_cur;
@@ -65,6 +70,12 @@ static const gbhifi_settings_t s_defaults = {
     .eq_bt_treble_db = CONFIG_GBHIFI_DSP_BT_EQ_TREBLE_DB,
     .sfx_enabled     = CONFIG_GBHIFI_DSP_SFX_DEFAULT_ON,
     .sfx_level_db    = CONFIG_GBHIFI_DSP_SFX_LEVEL_DB,
+    .nr_hpf_hz       = CONFIG_GBHIFI_DSP_NR_HPF_HZ,
+    .nr_lpf_hz       = CONFIG_GBHIFI_DSP_NR_LPF_HZ,
+    .nr_notch_hz     = CONFIG_GBHIFI_DSP_NR_NOTCH_HZ,
+    .nr_notch_q      = CONFIG_GBHIFI_DSP_NR_NOTCH_Q,
+    .nr_gate_thresh_db = CONFIG_GBHIFI_DSP_NR_GATE_THRESH_DB,
+    .nr_gate_range_db  = CONFIG_GBHIFI_DSP_NR_GATE_RANGE_DB,
     .mode_a          = CONFIG_GBHIFI_DEFAULT_MODE_A,
     .unplug_to_b     = CONFIG_GBHIFI_UNPLUG_TO_B,
     // Absolute hold thresholds: connect at CONNECT_HOLD_MS, pair + PAIR_EXTRA_MS
@@ -92,6 +103,12 @@ static void sanitise(gbhifi_settings_t *s)
     s->eq_bt_mid_db    = CLAMP(s->eq_bt_mid_db,    EQ_DB_MIN,  EQ_DB_MAX);
     s->eq_bt_treble_db = CLAMP(s->eq_bt_treble_db, EQ_DB_MIN,  EQ_DB_MAX);
     s->sfx_level_db    = CLAMP(s->sfx_level_db,    SFX_DB_MIN, SFX_DB_MAX);
+    if (s->nr_hpf_hz   > NR_HZ_MAX) s->nr_hpf_hz   = NR_HZ_MAX;
+    if (s->nr_lpf_hz   > NR_HZ_MAX) s->nr_lpf_hz   = NR_HZ_MAX;
+    if (s->nr_notch_hz > NR_HZ_MAX) s->nr_notch_hz = NR_HZ_MAX;
+    s->nr_notch_q      = CLAMP(s->nr_notch_q, NR_Q_MIN, NR_Q_MAX);
+    s->nr_gate_thresh_db = CLAMP(s->nr_gate_thresh_db, GATE_DB_MIN, 0);
+    if (s->nr_gate_range_db > GATE_RANGE_MAX) s->nr_gate_range_db = GATE_RANGE_MAX;
 
     // Hold thresholds: clamp each, then enforce strictly-increasing order so
     // buttons.c's per-rung re-arm intervals (pair-connect, mode-pair) stay
@@ -227,6 +244,31 @@ esp_err_t settings_set_sfx(bool enabled, int8_t level_db)
     xSemaphoreTake(s_lock, portMAX_DELAY);
     s_cur.sfx_enabled  = enabled;
     s_cur.sfx_level_db = CLAMP(level_db, SFX_DB_MIN, SFX_DB_MAX);
+    s_generation++;
+    xSemaphoreGive(s_lock);
+    return ESP_OK;
+}
+
+esp_err_t settings_set_nr(uint16_t hpf_hz, uint16_t lpf_hz, uint16_t notch_hz,
+                          uint8_t notch_q)
+{
+    if (!s_lock) return ESP_ERR_INVALID_STATE;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    s_cur.nr_hpf_hz   = (hpf_hz   > NR_HZ_MAX) ? NR_HZ_MAX : hpf_hz;
+    s_cur.nr_lpf_hz   = (lpf_hz   > NR_HZ_MAX) ? NR_HZ_MAX : lpf_hz;
+    s_cur.nr_notch_hz = (notch_hz > NR_HZ_MAX) ? NR_HZ_MAX : notch_hz;
+    s_cur.nr_notch_q  = CLAMP(notch_q, NR_Q_MIN, NR_Q_MAX);
+    s_generation++;
+    xSemaphoreGive(s_lock);
+    return ESP_OK;
+}
+
+esp_err_t settings_set_nr_gate(int8_t thresh_db, uint8_t range_db)
+{
+    if (!s_lock) return ESP_ERR_INVALID_STATE;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    s_cur.nr_gate_thresh_db = CLAMP(thresh_db, GATE_DB_MIN, 0);
+    s_cur.nr_gate_range_db  = (range_db > GATE_RANGE_MAX) ? GATE_RANGE_MAX : range_db;
     s_generation++;
     xSemaphoreGive(s_lock);
     return ESP_OK;

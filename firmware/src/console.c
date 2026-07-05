@@ -11,6 +11,9 @@
 #include "linenoise/linenoise.h"
 
 #include "app_sm.h"
+#include "audio_pipeline.h"
+#include "ble_config.h"
+#include "bt_a2d.h"
 #include "es8388.h"
 #include "fs.h"
 #include "settings.h"
@@ -308,6 +311,80 @@ static int cmd_hp(int argc, char **argv)
     return 0;
 }
 
+// `nr`: tunable noise reduction on the local capture path. With no args, show the
+// current filters; otherwise set one (0 Hz = off). Find the tones to target with
+// `wavedump` + tools/plot_wavedump.py. Persist with `save`.
+//   nr                  show current filters
+//   nr off              all filters off
+//   nr hpf <hz>         high-pass corner (low-frequency hum)
+//   nr lpf <hz>         low-pass corner (high-frequency hiss)
+//   nr notch <hz> [q]   notch a discrete tone (e.g. the aliased PWM whine)
+//   nr gate <dBFS> [range]  downward expander: fade the floor when below threshold
+static int cmd_nr(int argc, char **argv)
+{
+    gbhifi_settings_t s;
+    settings_get(&s);
+    if (argc == 1) {
+        printf("nr: hpf=%u Hz  lpf=%u Hz  notch=%u Hz (Q=%u)   (0 = off)\n",
+               s.nr_hpf_hz, s.nr_lpf_hz, s.nr_notch_hz, s.nr_notch_q);
+        printf("nr gate: thresh=%d dBFS  range=%d dB%s\n",
+               s.nr_gate_thresh_db, s.nr_gate_range_db, s.nr_gate_thresh_db < 0 ? "" : "  (off)");
+        return 0;
+    }
+    if (strcmp(argv[1], "gate") == 0) {
+        int8_t  th = s.nr_gate_thresh_db;
+        uint8_t rg = s.nr_gate_range_db;
+        if      (argc >= 3 && strcmp(argv[2], "off") == 0) th = 0;
+        else if (argc >= 3) { th = (int8_t)atoi(argv[2]); if (argc >= 4) rg = (uint8_t)atoi(argv[3]); }
+        else { printf("usage: nr gate <thresh_dBFS> [range_dB] | nr gate off\n"); return 1; }
+        settings_set_nr_gate(th, rg);
+        settings_get(&s);
+        printf("nr gate: thresh=%d dBFS  range=%d dB%s\n",
+               s.nr_gate_thresh_db, s.nr_gate_range_db, s.nr_gate_thresh_db < 0 ? "" : "  (off)");
+        return 0;
+    }
+    uint16_t hpf = s.nr_hpf_hz, lpf = s.nr_lpf_hz, notch = s.nr_notch_hz;
+    uint8_t  q   = s.nr_notch_q;
+    if      (strcmp(argv[1], "off")   == 0) { hpf = lpf = notch = 0; settings_set_nr_gate(0, s.nr_gate_range_db); }
+    else if (strcmp(argv[1], "hpf")   == 0 && argc >= 3) hpf   = (uint16_t)atoi(argv[2]);
+    else if (strcmp(argv[1], "lpf")   == 0 && argc >= 3) lpf   = (uint16_t)atoi(argv[2]);
+    else if (strcmp(argv[1], "notch") == 0 && argc >= 3) {
+        notch = (uint16_t)atoi(argv[2]);
+        if (argc >= 4) q = (uint8_t)atoi(argv[3]);
+    } else {
+        printf("usage: nr | nr off | nr hpf <hz> | nr lpf <hz> | nr notch <hz> [q] | nr gate <dBFS> [range]\n");
+        return 1;
+    }
+    settings_set_nr(hpf, lpf, notch, q);
+    printf("nr: hpf=%u Hz  lpf=%u Hz  notch=%u Hz (Q=%u)\n", hpf, lpf, notch, q);
+    return 0;
+}
+
+// `radio on|off`: silence the radio (BT inquiry/paging + BLE advertising) for a
+// clean GBA-only noise measurement; on restores normal operation.
+static int cmd_radio(int argc, char **argv)
+{
+    if (argc != 2 || (strcmp(argv[1], "on") && strcmp(argv[1], "off"))) {
+        printf("usage: radio on|off\n"); return 1;
+    }
+    bool on = (strcmp(argv[1], "on") == 0);
+    bt_a2d_set_radio(on);
+    ble_config_set_advertising(on);
+    printf("radio %s\n", on ? "ON" : "OFF (BT inquiry + BLE advertising stopped)");
+    return 0;
+}
+
+// `wavedump [n]`: capture n raw ADC frames (default 1024) and dump as CSV for
+// tools/plot_wavedump.py. Pair with `radio off` for a clean GBA-only noise floor.
+static int cmd_wavedump(int argc, char **argv)
+{
+    int n = (argc >= 2) ? atoi(argv[1]) : 0;   // 0 -> default (max) window
+    audio_pipeline_capture(n);
+    printf("wavedump requested (%s samples); dump follows\n",
+           (argc >= 2) ? argv[1] : "1024");
+    return 0;
+}
+
 // `batt`: read the battery rail (VBAT via the ADC1_CH0 sense divider).
 static int cmd_batt(int argc, char **argv)
 {
@@ -383,6 +460,9 @@ static void register_cmds(void)
         { .command = "hold",  .help = "R-button hold thresholds (ms): hold [connect pair mode exit]", .func = cmd_hold },
         { .command = "wheel", .help = "VOL wheel drives volume: wheel on|off",  .func = cmd_wheel },
         { .command = "batt",  .help = "Read battery rail voltage: batt",         .func = cmd_batt },
+        { .command = "nr",    .help = "Noise reduction: nr | hpf|lpf|notch <hz> [q] | gate <dBFS> [range]", .func = cmd_nr },
+        { .command = "radio", .help = "Silence radio for noise test: radio on|off", .func = cmd_radio },
+        { .command = "wavedump",.help = "Capture ADC samples for analysis: wavedump [n]", .func = cmd_wavedump },
         { .command = "outvol",.help = "Mode A analog volume (HP+spk drivers): outvol <0-100>", .func = cmd_outvol },
         { .command = "hp",    .help = "Override HP-detect (bench): hp plug|unplug|follow", .func = cmd_hp },
         { .command = "sleep", .help = "Force deep sleep (wake-reliability test): sleep", .func = cmd_sleep },

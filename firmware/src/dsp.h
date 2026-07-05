@@ -26,6 +26,11 @@ esp_err_t dsp_init(void);
 // profile change is click-free. Call on the HP-detect edge and at boot.
 void dsp_set_hp_plugged(bool plugged);
 
+// Register a callback fired (from the audio task) when the noise gate transitions
+// into or out of deep silence, so app_sm can mute/unmute the speaker amp in step
+// with the gate (killing the Class-D idle noise on silence). NULL to disable.
+void dsp_set_gate_mute_cb(void (*cb)(bool muting));
+
 // Process `frames` interleaved stereo int16 samples (L,R,L,R) in place. Called
 // from the audio pipeline task on the local DAC fan-out buffer.
 void dsp_process_local(int16_t *stereo, size_t frames);

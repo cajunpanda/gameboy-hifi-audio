@@ -69,3 +69,9 @@ esp_err_t bt_a2d_disconnect(void);
 // to stop expecting audio. Only meaningful while connected.
 esp_err_t bt_a2d_media_start(void);
 esp_err_t bt_a2d_media_suspend(void);
+
+// Enable/disable BT Classic radio activity for a clean bench measurement. `off`
+// cancels any in-flight inquiry and gates further inquiry/paging so no BT TX
+// happens; `on` re-allows it. Pairs with ble_config_set_advertising() behind the
+// `radio` console command.
+void bt_a2d_set_radio(bool on);

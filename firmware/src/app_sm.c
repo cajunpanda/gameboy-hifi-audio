@@ -116,6 +116,7 @@ typedef enum {
     EV_MODE_CHANGE,         // desired (settings.mode_a) != active mode, transition
     EV_OTA_BEGIN,           // BLE client wants to flash: quiesce + enter ST_OTA
     EV_OTA_END,             // OTA ended without reboot (abort/error/disconnect): resume
+    EV_GATE_CHANGED,        // noise-gate deep-silence state changed (drives amp mute)
 } sm_event_t;
 
 #define EVQ_DEPTH 16
@@ -192,6 +193,10 @@ static bool s_hp_plugged = false;
 // edges are ignored (see on_button).
 static int s_hp_force = -1;
 
+// Noise-gate amp mute: set by the DSP (on_gate_mute) when the gate is deep in
+// silence, so pam_apply also drops the speaker amp to kill its Class-D idle hiss.
+static volatile bool s_gate_muting = false;
+
 static void post(sm_event_t ev)
 {
     uint8_t e = (uint8_t)ev;
@@ -215,7 +220,7 @@ static void pam_set_unmuted(bool unmuted)
 // pairing chime + game audio play while the user sets up headphones.
 static void pam_apply(void)
 {
-    bool unmuted = (s_state != ST_STREAMING) && !s_hp_plugged;
+    bool unmuted = (s_state != ST_STREAMING) && !s_hp_plugged && !s_gate_muting;
     pam_set_unmuted(unmuted);
 }
 
@@ -468,6 +473,14 @@ static void on_bt(const bt_event_msg_t *m)
 static void on_silence(bool silent)
 {
     post(silent ? EV_AUDIO_SILENT : EV_AUDIO_ACTIVE);
+}
+
+// Noise-gate deep-silence transition (called from the audio task). Record it and
+// poke the SM to re-evaluate the speaker-amp mute.
+static void on_gate_mute(bool muting)
+{
+    s_gate_muting = muting;
+    post(EV_GATE_CHANGED);
 }
 
 // BLE OTA lifecycle (ble_config). Fires on the Bluedroid task; post into the SM
@@ -1094,6 +1107,9 @@ static void sm_task(void *arg)
             }
             continue;
         }
+        // Noise-gate deep-silence transition: re-apply the amp mute (drop the
+        // speaker amp in silence, restore it the instant audio returns).
+        if (ev == EV_GATE_CHANGED) { pam_apply(); continue; }
         // Apply a pending mode change. Entering Mode A runs the entire Mode A
         // lifecycle inline: enter(ST_MODE_A) sets up the bypass + parks the
         // pipeline, then mode_a_run() blocks in the light-sleep duty loop and
@@ -1193,6 +1209,7 @@ esp_err_t app_sm_start(void)
     buttons_set_event_cb(on_button);
     bt_a2d_set_event_cb(on_bt);
     audio_pipeline_set_silence_cb(on_silence);
+    dsp_set_gate_mute_cb(on_gate_mute);
     ble_config_set_ota_cb(on_ota);
 
     xTaskCreate(sm_task, "app_sm", 4096, NULL, 6, NULL);

@@ -52,3 +52,10 @@ void audio_pipeline_set_silence_cb(audio_silence_cb_t cb);
 // Current silence state. Useful at state-machine transition entry to decide
 // whether to treat audio as active, since the callback only fires on edges.
 bool audio_pipeline_is_silent(void);
+
+// Request an on-demand capture of `samples` raw ADC frames (clamped to the max;
+// default when <= 0). The pipeline dumps them as CSV between WAVEDUMP_BEGIN /
+// WAVEDUMP_END markers over UART for tools/plot_wavedump.py (noise-floor / spectrum
+// analysis). Captures verbatim with no level arming, so it works on the quiet noise
+// floor. The dump briefly stalls audio; debug/bench use.
+void audio_pipeline_capture(int samples);

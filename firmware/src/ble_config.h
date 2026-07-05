@@ -46,6 +46,11 @@ void ble_config_set_ota_cb(ble_ota_event_cb_t cb);
 // esp_ota_begin() result.
 esp_err_t ble_config_ota_proceed(void);
 
+// Start/stop BLE advertising. The `radio off` console command uses this to silence
+// the periodic advertising RF bursts for a clean noise measurement; `off` also
+// inhibits the auto re-advertise on central disconnect until turned back on.
+void ble_config_set_advertising(bool on);
+
 #ifdef __cplusplus
 }
 #endif

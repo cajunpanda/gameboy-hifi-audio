@@ -122,6 +122,7 @@ static int           s_link_state    = LINK_IDLE;
 static int           s_media_state   = MEDIA_IDLE;
 static esp_bd_addr_t s_peer_bda      = {0};
 static bool          s_pairing_mode  = false;  // true while inquiry-pairing
+static bool          s_radio_off     = false;  // `radio off`: gate inquiry + paging TX
 // Cursor into the most-recent-first ordered bond list, advanced on each
 // reconnect attempt so successive ticks cycle through every bonded sink.
 static int           s_try_idx       = 0;
@@ -397,6 +398,7 @@ esp_err_t bt_a2d_connect_bonded(void)
     if (s_link_state == LINK_PAGING || s_link_state == LINK_CONNECTED) {
         return ESP_OK;
     }
+    if (s_radio_off) return ESP_OK;   // radio silenced for a bench measurement
 
     int n = esp_bt_gap_get_bond_device_num();
     if (n <= 0) {
@@ -445,12 +447,26 @@ esp_err_t bt_a2d_connect_bonded(void)
 
 esp_err_t bt_a2d_start_pairing(void)
 {
+    if (s_radio_off) return ESP_OK;   // radio silenced for a bench measurement
     ESP_LOGI(TAG, "*** entering pairing mode (inquiry) ***");
     memset(s_peer_bda, 0, sizeof(s_peer_bda));
     s_pairing_mode = true;
     s_link_state   = LINK_DISCOVERING;
     return esp_bt_gap_start_discovery(ESP_BT_INQ_MODE_GENERAL_INQUIRY,
                                       CONFIG_GBHIFI_INQUIRY_DURATION, 0);
+}
+
+// Gate BT Classic TX for a clean bench noise measurement. `off` cancels any
+// in-flight inquiry and blocks further inquiry/paging (see the guards in
+// bt_a2d_start_pairing / bt_a2d_connect_bonded); `on` re-allows them.
+void bt_a2d_set_radio(bool on)
+{
+    s_radio_off = !on;
+    if (!on) {
+        esp_bt_gap_cancel_discovery();
+        s_pairing_mode = false;
+    }
+    ESP_LOGI(TAG, "BT radio %s", on ? "on" : "off (inquiry + paging gated)");
 }
 
 bool bt_a2d_has_bond(void)

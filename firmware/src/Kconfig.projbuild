@@ -268,6 +268,52 @@ menu "GameBoy HiFi Audio"
                 authored level. Cues are mixed post-volume so they stay
                 audible regardless of the speaker volume setting.
 
+        config GBHIFI_DSP_NR_HPF_HZ
+            int "Noise reduction: high-pass corner (Hz, 0 = off)"
+            default 100
+            range 0 21000
+            help
+                Removes low-frequency hum captured from the GBA audio tap. Safe
+                at ~100 Hz: the GBA driver is bass-shy. Runtime-tunable per GBA
+                via the `nr` console command; this is only the first-boot seed.
+
+        config GBHIFI_DSP_NR_LPF_HZ
+            int "Noise reduction: low-pass corner (Hz, 0 = off)"
+            default 0
+            range 0 21000
+            help
+                Rolls off high-frequency hiss. Off by default (GBA-specific).
+
+        config GBHIFI_DSP_NR_NOTCH_HZ
+            int "Noise reduction: notch center (Hz, 0 = off)"
+            default 0
+            range 0 21000
+            help
+                Nulls a discrete tone, e.g. the GBA's ~65.5 kHz PWM sound carrier
+                aliasing to ~21.4 kHz. Off by default; find the tone with the
+                `wavedump` capture + tools/plot_wavedump.py, then set it per GBA.
+
+        config GBHIFI_DSP_NR_NOTCH_Q
+            int "Noise reduction: notch Q (sharpness, higher = narrower)"
+            default 10
+            range 1 40
+
+        config GBHIFI_DSP_NR_GATE_THRESH_DB
+            int "Noise gate: threshold, dBFS (0 = off)"
+            default -42
+            range -90 0
+            help
+                Downward expander: below this program level the signal is
+                attenuated so the noise floor fades out when the GBA is quiet,
+                and the speaker amp mutes on sustained silence to kill its idle
+                hiss. -42 dBFS sits just above the measured floor on the first
+                board; re-tune per GBA via `nr gate <thresh> <range>` (0 = off).
+
+        config GBHIFI_DSP_NR_GATE_RANGE_DB
+            int "Noise gate: max attenuation when closed, dB"
+            default 30
+            range 0 60
+
     endmenu
 
     menu "Operating modes"
