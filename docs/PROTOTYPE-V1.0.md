@@ -143,6 +143,59 @@ Two findings:
   lands "if it happens to fall in a wake window"). A cabled `reset` also returns
   to Mode B since the mode preference is not persisted unless saved.
 
+## Audio noise floor and reduction
+
+The GBA's pre-volume audio tap is inherently noisy and the mod captures it
+faithfully. Characterised with the `wavedump` console capture + tools/plot_wavedump.py
+(radio off, GBA silent) on the first board:
+
+- Dominant tone ~21.4 kHz: the GBA Direct-Sound PWM carrier (65.536 kHz) aliasing
+  into band when the codec samples at 44.1 kHz (65536 - 44100 = 21436 Hz). The
+  reconstruction low-pass (R3/C13, single-pole ~7.2 kHz) only knocks the carrier
+  down ~20 dB. Faintly audible as a high whine.
+- Low hum ~172 Hz plus a broadband floor near -100 dBFS. RMS ~-61 dBFS.
+- The noise is on the tap, not the codec supply/reference (which are well filtered
+  by FB1 + generous bypass): grounding RIN/LIN kills it, and it is attenuated by
+  the digital volume wheel, so it enters on the ADC capture side. Partly the GBA's
+  own audio, partly ground-difference coupling on the shared flex, which carries
+  the boost/amp/BT switching return currents alongside the audio tap.
+
+Reduction runs in the DSP (Mode B) on the captured signal before the voicing EQ,
+tunable per GBA via the `nr` console command and persisted in NVS:
+
+- HPF / LPF / notch biquads (hum / hiss / a discrete tone).
+- A downward expander (noise gate): below the threshold the signal is attenuated
+  so the floor fades out in quiet passages.
+- Amp-mute on sustained silence: app_sm drops the PAM8302A (PIN_PAM_SD) once the
+  gate has held silent, killing the Class-D idle hiss the DSP cannot reach, and
+  releases it the instant audio returns.
+
+Baked defaults (first-board tuning): HPF 100 Hz, gate -42 dBFS / 30 dB, rest off.
+Result: dead-silent headphones and speaker on silence, clean on audio return.
+
+Rev B items:
+
+- Steeper anti-alias before the ADC (a 2-pole reconstruction LP, or a lower corner)
+  so the 65.5 kHz PWM carrier cannot fold to 21.4 kHz. This is the real fix for the
+  whine; a digital notch that close to Nyquist is weak.
+- A differential / ground-referenced audio tap into the ES8388 (RIN1/LIN1 are NC)
+  to reject the shared-flex ground-difference noise; keep the tap traces away from
+  the switching returns on the flex.
+
+### Bench gotcha: serial cable reboot loop
+
+A bus-powered FTDI serial cable whose VCC (3.3 V) output is tied to the board's
++3V3 (the Tag-Connect VCC, J1 pin 1) gets back-driven by the board's switching and
+amp transients, browns out, and re-enumerates on USB. The serial proxy then reopens
+the port, and opening it asserts DTR -> EN -> a chip reset; the reset sags +3V3,
+re-enumerates the FTDI again, and the loop self-sustains (POWERON_RESET every few
+seconds). It only happens with the cable attached and the board active, which makes
+it look mechanical -- it is not.
+
+Fixes: use a serial cable that does not feed VCC (leave only TX/RX/GND/DTR), and/or
+the serial_proxy.py open-without-DTR-glitch change. Rev B: do not hard-tie the
+Tag-Connect VCC to +3V3.
+
 ## Antenna: U1 uses MHF III, not U.FL (found on the first production run)
 
 The `-02U` module has an **external antenna connector**, not an on-board PCB
