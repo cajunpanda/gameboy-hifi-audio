@@ -149,7 +149,21 @@ class Proxy:
         self.empty = 0
 
     def _open(self, do_reset):
-        self.ser = serial.Serial(self.port, self.baud, timeout=0.2)
+        # Construct the port unopened so DTR/RTS can be forced low BEFORE open().
+        # Opening a Serial() that already has a port asserts DTR, which the board's
+        # DTR/RTS -> EN/IO0 auto-reset circuit turns into an EN pulse (a spurious
+        # chip reset) on every (re)attach. Setting dtr/rts on the closed port makes
+        # open() apply them, avoiding that glitch -- important when a flaky cable
+        # re-enumerates repeatedly and we must not reboot the chip each time.
+        self.ser = serial.Serial(timeout=0.2)
+        self.ser.port = self.port
+        self.ser.baudrate = self.baud
+        try:
+            self.ser.dtr = False
+            self.ser.rts = False
+        except Exception:
+            pass
+        self.ser.open()
         if do_reset:
             self._reset_pulse()
         # Idle DTR and RTS to the same level so an external two-transistor auto-reset circuit
