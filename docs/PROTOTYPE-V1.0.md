@@ -87,10 +87,18 @@ idles near 0 V differential.
 
 Contributing factors on this revision:
 
-- No external series gain resistor on the input, so the amp runs near its max
-  gain (~23.5 dB from the internal 150k/10k). That amplifies the noise floor.
-- Filterless output runs straight onto the long flex speaker leads with no
-  output ferrite/Zobel network (an EMI concern, not the current draw).
+- Gain: the earlier note here (that the amp ran at its ~23.5 dB max for lack of
+  an external input resistor) was wrong. R7 and R8 (15k each) sum LOUT2/ROUT2
+  into PAM_SUM and sit in series with IN+, so they already act as the external
+  RIN in A = 20*log(150k/(10k+RIN)). Effective gain is ~12.6 dB per channel
+  (~18.7 dB when both codec outputs carry the same signal), well under the
+  23.5 dB IC ceiling. Gain is already set by R7/R8; raise them to lower it. The
+  gain amplifies the residual noise floor, but the amp is not near max gain.
+- Output EMI: the earlier note here (filterless output onto "long flex speaker
+  leads") was wrong for this board. SPK+/SPK- (J5/J6) are 4-6 mm from U4 on the
+  PCB, so the filterless output is in its intended short-lead use case and the
+  VDD bulk (C20/C21) covers it. An output ferrite/Zobel is only warranted if the
+  off-board speaker lead itself is long (datasheet: >~20 cm).
 
 VDD bypass (C20 10 uF and C21 100 nF on +3V3) is placed at the pin and is not
 implicated; the fault is the input DC path, not decoupling.
@@ -98,10 +106,16 @@ implicated; the fault is the input DC path, not decoupling.
 Fixes for the next revision:
 
 1. AC-couple IN-: add a coupling cap from IN- to GND matching C19 (about 1 uF).
-   This is the actual fix.
-2. Add a series input resistor (about 10 to 47 kohm) to set a sane gain.
-3. Optional: add an output ferrite-bead plus cap EMI filter given the long flex
-   speaker run.
+   This is the actual fix. No matching resistor on IN- is needed -- the input is
+   single-ended (signal on IN+, IN- is the AC-grounded reference leg) and both
+   caps block DC, so the internal bias is already balanced.
+2. Gain, if adjustment is wanted, is set by R7/R8 (15k) -- increase them (keep
+   the pair matched to hold L/R balance); no new part. The -10.5 dB codec cut
+   applied in firmware is the tell that system gain is ~10 dB hotter than used,
+   so moving that attenuation into R7/R8 (~15k -> ~47k) reclaims codec SNR.
+3. Output EMI filter is not needed (speaker pads are at the amp, see above).
+   Optional DNP hedge: leave bead+cap footprints per output in case on-board
+   2.4 GHz (now a built-in PCB antenna) shows desense in EMC testing.
 
 Fix 1 validated on the first board by bodge (2026-07-04): IN- (pin 4) lifted off
 GND and a 1 uF ceramic added from IN- to GND, value-matched to C19 on IN+ (both
@@ -210,6 +224,24 @@ tunable per GBA via the `nr` console command and persisted in NVS:
 
 Baked defaults (first-board tuning): HPF 100 Hz, gate -42 dBFS / 30 dB, rest off.
 Result: dead-silent headphones and speaker on silence, clean on audio return.
+
+Source-isolation bench test (2026-07-05): confirmed the residual speaker hiss is
+capture-side, not the amp. Procedure -- `mode b`, `hp unplug`, `nr gate off`
+(this also defeats the silence amp-mute, since the deep-silence detector in dsp.c
+only runs inside `if (s_gate_on)`, so U4 stays enabled and the floor is audible).
+Then:
+- `out2 0x00` (mute the ES8388 speaker driver) -> hiss gone. It is in the codec
+  output path, not U4 idle/switching or supply/ground coupling.
+- Volume wheel (digital `vol`, applied pre-DAC in the DSP) attenuates the hiss ->
+  it rides in the digital program signal, i.e. the ADC capture-side floor above,
+  not the codec's post-DAC analog output-stage noise.
+
+Consequence: raising R7/R8 (the U4 input/gain resistors, see the PAM8302A section)
+does **not** help this hiss. The noise is already digitised, so scaling the DAC up
+and the amp gain down leaves its SNR unchanged. R7/R8 only shave amp-input and
+codec analog-output noise, neither of which is the dominant term here. The fix is
+the DSP `nr` chain now (gate/HPF/notch), and the capture-path rework below in Rev B.
+(Restore after the test: `out2 0x17` = -10.5 dB, or reboot -- the poke is not saved.)
 
 Rev B items:
 

@@ -78,7 +78,19 @@
       ],
       "drc_exclusions": [
         [
+          "lib_footprint_mismatch|105737500|121900000|fbfd9d27-1f44-4dd6-967b-7e6e3a163e7f|00000000-0000-0000-0000-000000000000",
+          ""
+        ],
+        [
           "lib_footprint_mismatch|97342500|108100000|6e92bec4-84b8-4270-bbb1-de2e214f8064|00000000-0000-0000-0000-000000000000",
+          ""
+        ],
+        [
+          "silk_edge_clearance|112000000|126425000|f855744e-9974-49b4-b35a-4a408f8a10dc|99223dcf-fbd2-41a8-86b9-9dbc3389f7b3",
+          ""
+        ],
+        [
+          "silk_edge_clearance|98800000|126425000|f855744e-9974-49b4-b35a-4a408f8a10dc|b96aa208-0f05-4f86-9be8-82b2b6f4a87c",
           ""
         ],
         [
@@ -715,7 +727,7 @@
         "uuid": "e7656266-2f58-473d-b3ae-fcd2db0ef0fd"
       }
     ],
-    "used_designators": "C29,J7-8",
+    "used_designators": "#PWR39,C27,C29,J7-8",
     "variants": []
   },
   "sheets": [
