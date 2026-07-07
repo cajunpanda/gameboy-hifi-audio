@@ -54,7 +54,7 @@ This project has three kinds of reader. Start with the doc that matches you.
 
 ```
 firmware/        ESP-IDF firmware (PlatformIO project), shared across boards
-hardware/agb/    KiCad projects for the AGB main board and flex, plus the BOM
+hardware/agb/    KiCad projects for the AGB main board and flex (schematic carries the BOM)
 web/             Web Bluetooth config page (hosted on GitHub Pages)
 tools/           serial_proxy.py (serial monitor and flasher), make_clip.py (clip authoring)
 docs/            the guides above

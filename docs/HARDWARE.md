@@ -23,27 +23,67 @@ There are two boards for the AGB:
 
 ## Key parts
 
-The full bill of materials is in [`hardware/agb/bom.csv`](../hardware/agb/bom.csv),
-with manufacturer and distributor part numbers. The main active parts are:
+The bill of materials lives in the KiCad schematic itself (the source of truth),
+where each symbol carries its manufacturer, LCSC, and DigiKey part numbers. Export
+it from the [main-board schematic](../hardware/agb/agb-hifi-audio-pcb/). The main
+active parts are:
 
 | Ref | Part | Function |
 | --- | --- | --- |
-| U1 | ESP32-PICO-MINI-02U-N8R2 | MCU, Bluetooth radio, 8 MB flash |
+| U1 | ESP32-PICO-MINI-02-N8R2 | MCU, Bluetooth radio, 8 MB flash |
 | U2 | ES8388 | Stereo audio codec: ADC, DAC, headphone amp, analog bypass |
 | U3 | TPS61021A | Boost converter, battery to 3.3 V |
 | U4 | PAM8302A | Mono Class-D amplifier for the internal speaker |
 | FPC1 | FH12A-12S-0.5SH | 12-pin flat-flex connector for the flex |
 
 The ES8388 is a QFN-28 and is not hand-solderable in the usual sense. Plan on a
-stencil and reflow, or hot air. The ESP32 module is castellated and easier.
+stencil and reflow, or hot air. The ESP32 module needs the same treatment: its
+pads sit under the module's edge rather than as exposed castellations, so an iron
+cannot reach them all. Its pitch is coarser than the codec's, so it is the more
+forgiving of the two, but it is still a reflow or hot-air part.
 
 ### Antenna
 
-The `-02U` module uses an external I-PEX **MHF III (W.FL)** antenna connector,
-not U.FL/MHF1, so `ANT1` needs the `ADPT1` adapter. Antenna selection, the
-bench rig, and production sourcing options are documented in
-[`PROTOTYPE-V1.0.md`](PROTOTYPE-V1.0.md) (the connector-generation mismatch was
-a first-run finding).
+U1 is the `-02` module, which has an on-board PCB antenna, so the mod needs no
+external antenna, connector, or adapter. Respect the module's antenna keep-out:
+keep copper, ground pour, metal, and wiring away from the antenna end, and mount
+it clear of the shell's metal. The first prototype used the `-02U` variant with
+an external I-PEX **MHF III (W.FL)** antenna; [`PROTOTYPE-V1.0.md`](PROTOTYPE-V1.0.md)
+records that run and why the design moved to the built-in antenna.
+
+### Full bill of materials
+
+Passives are listed by value; the schematic carries the exact manufacturer,
+LCSC, and DigiKey part numbers for every line. 26 lines, 55 pieces.
+
+| Ref(s) | Qty | Value / part | Package |
+| --- | --- | --- | --- |
+| C1, C2 | 2 | 22 µF | 0603 |
+| C3, C6, C8, C10, C11, C20, C24 | 7 | 10 µF | 0402 |
+| C4, C7, C9, C21, C25, C26, C30 | 7 | 100 nF | 0402 |
+| C5, C15, C16, C19, C27 | 5 | 1 µF | 0402 |
+| C12 | 1 | 4.7 µF | 0402 |
+| C13, C14 | 2 | 10 nF C0G | 0402 |
+| C17, C18 | 2 | 220 µF 6.3 V (tantalum) | EIA-3528 |
+| C22, C23 | 2 | 10 nF | 0402 |
+| C29 | 1 | 10 pF | 0402 |
+| R1 | 1 | 316 kΩ | 0402 |
+| R2, R9, R20, R21 | 4 | 100 kΩ | 0402 |
+| R3, R4 | 2 | 2.2 kΩ | 0402 |
+| R7, R8 | 2 | 15 kΩ | 0402 |
+| R10, R13, R14 | 3 | 10 kΩ | 0402 |
+| R11, R12 | 2 | 1 kΩ | 0402 |
+| R15, R16 | 2 | 4.7 kΩ | 0402 |
+| R17 | 1 | 10 Ω | 0402 |
+| R18 | 1 | 0 Ω (jumper) | 0402 |
+| R19 | 1 | 33 Ω | 0402 |
+| L1 | 1 | 0.47 µH (power inductor) | 2.5 × 2.0 mm |
+| FB1 | 1 | 600 Ω @ 100 MHz (ferrite bead) | 0402 |
+| FPC1 | 1 | FH12A-12S-0.5SH | 12-pin FFC |
+| U1 | 1 | ESP32-PICO-MINI-02-N8R2 | SMD module |
+| U2 | 1 | ES8388 | QFN-28 (4 × 4 mm) |
+| U3 | 1 | TPS61021A | WSON-8 (2 × 2 mm) |
+| U4 | 1 | PAM8302A | MSOP-8 |
 
 ## Ordering the boards
 
