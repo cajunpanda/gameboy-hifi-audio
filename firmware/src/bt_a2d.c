@@ -318,6 +318,7 @@ static void av_event_hdlr(uint16_t event, void *param)
             ESP_LOGI(TAG, "A2DP disconnected");
             s_link_state  = LINK_IDLE;
             s_media_state = MEDIA_IDLE;
+            audio_pipeline_set_bt_streaming(false);   // close the producer gate
             // Do NOT reset s_try_idx here. This fires on both a real
             // connection drop and a failed page; resetting it on a failed
             // page would re-page slot 0 forever, never falling back to the
@@ -349,13 +350,19 @@ static void av_event_hdlr(uint16_t event, void *param)
             if (st == ESP_A2D_MEDIA_CTRL_ACK_SUCCESS) {
                 ESP_LOGI(TAG, "*** media STARTED ***");
                 s_media_state = MEDIA_STARTED;
+                // Open the producer gate now that the encoder is pulling, so the
+                // stream buffer fills from empty in step with the consumer instead
+                // of pre-filling to full during the connect handshake.
+                audio_pipeline_set_bt_streaming(true);
             } else {
                 ESP_LOGW(TAG, "media start NACK (%d); retry next call", st);
                 s_media_state = MEDIA_IDLE;
+                audio_pipeline_set_bt_streaming(false);
             }
         } else if (cmd == ESP_A2D_MEDIA_CTRL_SUSPEND) {
             ESP_LOGI(TAG, "media SUSPENDED (status=%d)", st);
             s_media_state = MEDIA_IDLE;
+            audio_pipeline_set_bt_streaming(false);
         }
         break;
     }

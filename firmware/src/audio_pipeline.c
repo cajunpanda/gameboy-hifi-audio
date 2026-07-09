@@ -25,11 +25,18 @@ static const char *TAG = "audio";
 #define FRAME_BYTES 8                       // I2S input: stereo, 32-bit slots
 #define OUT_FRAME_BYTES 4                   // PCM output: stereo, 16-bit
 
-// At 44.1 kHz stereo 16-bit, audio is 176.4 KB/s. The stream buffer absorbs the
-// BT consumer's burst pull pattern (it idles while L2CAP TX completes, then
-// grabs a chunk). ~90 ms covers worst-case scheduling jitter; smaller buffers
-// overflow and drop samples (audible distortion).
-#define PCM_STREAM_BUFFER_BYTES (12 * 1024)
+// At 44.1 kHz stereo 16-bit, audio is 176.4 KB/s (~176 bytes/ms). The stream
+// buffer absorbs the BT consumer's burst pull pattern (it idles while L2CAP TX
+// completes, then grabs a chunk). Sized to hold the ~5 KB natural burst swing
+// (observed fill range 1-6 KB) plus a little margin above the high-water mark.
+#define PCM_STREAM_BUFFER_BYTES (8 * 1024)     // ~46 ms max; was 12 KB
+// High-water trim: the producer skips its push while the queue is already at/above
+// this level, so latency stays bounded (~34 ms) instead of drifting toward full as
+// the 44.1 kHz producer slowly outruns the sink's consume rate (no rate matching).
+// Set above the ~5 KB burst swing so normal bursts aren't clipped -- only the slow
+// drift trips it, dropping one ~6 ms block occasionally (rare, ~inaudible) rather
+// than letting the fill climb to a 70 ms overflow.
+#define PCM_STREAM_HIGH_WATER   (6 * 1024)
 // Wake the BT consumer as soon as one SBC-sized block is ready.
 // 512 bytes = 128 stereo frames ~2.9 ms.
 #define PCM_STREAM_TRIGGER_LEVEL 512
@@ -46,6 +53,20 @@ static const char *TAG = "audio";
 static volatile int s_wd_request = 0;        // samples to capture on next read (0 = idle)
 
 static StreamBufferHandle_t s_pcm_stream = NULL;
+// True only while a sink is actively streaming (set from bt_a2d on the media
+// state). Gates the producer push so the buffer isn't pre-filled to full while
+// idle/connecting. Written from the BT task, read by the pipeline task; a plain
+// bool write is atomic on ESP32.
+static volatile bool s_bt_streaming = false;
+
+// Prebuffer: at stream start the consumer emits silence until this many bytes have
+// queued, so real audio only flows once there's a cushion. Filling from empty
+// otherwise underruns for the first ~0.5 s -- each partial read is real samples
+// then zero-pad, a discontinuity the SBC encoder renders as garble. ~23 ms at
+// 44.1 kHz/16-bit/stereo; small enough to stay low-latency, large enough to cover
+// the consumer's bursty pull. Cleared on stop so each connect re-primes.
+#define PCM_PRIME_TARGET_BYTES  (4 * 1024)
+static volatile bool s_pcm_primed = false;
 
 // Cooperative park (Mode A: stop the digital path so I2S/MCLK can stop).
 // audio_pipeline_stop() sets s_park_req; the task acks via s_parked_sem at the
@@ -75,6 +96,12 @@ void audio_pipeline_capture(int samples)
 {
     if (samples <= 0 || samples > WAVEDUMP_MAX) samples = WAVEDUMP_MAX;
     s_wd_request = samples;
+}
+
+void audio_pipeline_set_bt_streaming(bool streaming)
+{
+    s_bt_streaming = streaming;
+    if (!streaming) s_pcm_primed = false;   // re-prebuffer on the next connect
 }
 
 bool audio_pipeline_is_silent(void)
@@ -120,6 +147,7 @@ static void pipeline_task(void *arg)
     static int32_t wd_buf[WAVEDUMP_MAX * 2];
     int wd_have = 0;      // samples captured into the active dump
     int wd_target = 0;    // 0 = not capturing; else samples requested for this dump
+    bool bt_streaming_prev = false;   // edge-detect the streaming gate for buffer reset
 
     while (1) {
         // Cooperative park for Mode A: when stop() requests it, ack and block
@@ -207,16 +235,31 @@ static void pipeline_task(void *arg)
         // cue is playing.
         dsp_process_bt(out_buf, frames);
 
-        // Push the interleaved stereo PCM into the stream buffer for A2DP.
-        // Non-blocking: if the BT consumer is slow or absent, drop frames rather
-        // than stall I2S DMA. Stale audio is useless.
-        if (s_pcm_stream) {
-            (void)xStreamBufferSend(s_pcm_stream, out_buf,
-                                    frames * OUT_FRAME_BYTES, 0);
+        // Push the interleaved stereo PCM into the stream buffer for A2DP, but only
+        // while a sink is actively streaming. Gating the fill keeps the buffer from
+        // pre-filling to full while idle/connecting -- which otherwise hands the SBC
+        // encoder a full (~70 ms) buffer at connect that overflows and drops for a
+        // second or two. On the streaming->idle edge, empty the buffer so the next
+        // connect starts from ~0 latency; the consumer (a2d_data_cb) is idle once the
+        // media stops, so the reset does not race a concurrent read. Non-blocking
+        // send: if the consumer falls behind, drop rather than stall I2S DMA.
+        bool bt_streaming = s_bt_streaming;
+        if (s_pcm_stream && bt_streaming) {
+            // High-water trim: skip the push while the queue is already at the mark,
+            // so latency stays bounded instead of drifting toward full. Drops the
+            // newest ~6 ms block once per drift accumulation (rare) rather than
+            // letting the fill climb to an eventual overflow.
+            if (xStreamBufferBytesAvailable(s_pcm_stream) < PCM_STREAM_HIGH_WATER) {
+                (void)xStreamBufferSend(s_pcm_stream, out_buf,
+                                        frames * OUT_FRAME_BYTES, 0);
+            }
             size_t fill = xStreamBufferBytesAvailable(s_pcm_stream);
             if (fill < fill_min) fill_min = fill;
             if (fill > fill_max) fill_max = fill;
+        } else if (s_pcm_stream && bt_streaming_prev && !bt_streaming) {
+            xStreamBufferReset(s_pcm_stream);   // streaming ended: drop stale audio
         }
+        bt_streaming_prev = bt_streaming;
 
         // Local DSP: stereo speaker EQ, digital volume, SFX cue mix, saturate,
         // in place on the interleaved local buffer.
@@ -339,6 +382,16 @@ size_t audio_pipeline_read_stereo16(void *dst, size_t max_bytes,
 {
     if (!s_pcm_stream || !dst || max_bytes == 0) {
         return 0;
+    }
+    // Prebuffer at stream start: hold real audio back until a cushion has built. A
+    // 0-length return makes the A2DP callback emit clean silence; once the queue
+    // reaches the target we latch primed and stream normally. Re-primes on the next
+    // connect (the gate clears s_pcm_primed on stop).
+    if (!s_pcm_primed) {
+        if (xStreamBufferBytesAvailable(s_pcm_stream) < PCM_PRIME_TARGET_BYTES) {
+            return 0;
+        }
+        s_pcm_primed = true;
     }
     return xStreamBufferReceive(s_pcm_stream, dst, max_bytes,
                                 pdMS_TO_TICKS(timeout_ms));

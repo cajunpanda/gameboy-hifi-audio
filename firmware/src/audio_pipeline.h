@@ -39,6 +39,15 @@ esp_err_t audio_pipeline_resume(void);
 size_t audio_pipeline_read_stereo16(void *dst, size_t max_bytes,
                                     uint32_t timeout_ms);
 
+// Gate the A2DP producer: fill the stream buffer only while a sink is actively
+// streaming (call true at media STARTED, false at SUSPEND/disconnect). Off leaves
+// the buffer empty so it never pre-fills to full while idle/connecting -- which
+// otherwise hands the SBC encoder a full (~70 ms) buffer at connect that overflows
+// and drops for a second or two. On the streaming->idle edge the pipeline empties
+// the buffer (the consumer is idle then, so it is race-free), so the next connect
+// starts at ~0 ms latency.
+void audio_pipeline_set_bt_streaming(bool streaming);
+
 // Silence detection: peak amplitude is computed per 1-second window. If the
 // max(|L|, |R|) peak is below threshold for two consecutive windows, the line is
 // considered silent and the callback fires with silent=true. As soon as a window
