@@ -421,9 +421,12 @@ static void vol_apply_from_wheel(void)
     }
     s_vol_last_pct = pct;
     if (s_active_mode == ES8388_MODE_BYPASS) {
-        es8388_set_output_volume(pct);   // Mode A: codec output drivers (I2C)
+        es8388_set_output_volume(pct);        // Mode A: codec output drivers (I2C)
+    } else if (s_state == ST_STREAMING) {
+        settings_set_bt_volume((uint8_t)pct); // BT sink carries the audio (local amp
+                                              // muted in STREAMING): drive BT volume
     } else {
-        settings_set_volume((uint8_t)pct); // Mode B: local-speaker DSP volume
+        settings_set_volume((uint8_t)pct);    // Mode B: local-speaker DSP volume
     }
 }
 

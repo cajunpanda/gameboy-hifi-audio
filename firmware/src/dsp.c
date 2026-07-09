@@ -61,6 +61,29 @@ static int   s_gate_silence = 0;     // consecutive silent blocks (amp-mute hold
 static bool  s_gate_muting = false;  // speaker-amp mute state (sustained silence)
 static void (*s_gate_mute_cb)(bool) = NULL;  // notified on mute-state change
 
+// Bluetooth-path noise reduction. The A2DP stream needs the same capture cleanup
+// the local path gets: without it the raw GBA floor (hum + hiss) was fed straight
+// into the SBC encoder, whose low-level rendering was audible as a distinct
+// digital hash on the sink. Reuses the shared s_nr_* coefficients and gate
+// thresholds (same tuning, same per-GBA `nr` settings) but keeps its own
+// per-channel delay lines and its own smoothed expander gain, so the BT stream
+// filters/gates independently of the local speaker path. No amp-mute here: the
+// sink has its own amp, so gating the signal to silence is enough.
+static float s_bt_nr_w_hpf[2][2], s_bt_nr_w_lpf[2][2], s_bt_nr_w_notch[2][2];
+static float s_bt_gate_target = 1.0f;   // per-block target gain (linear)
+static float s_bt_gate_gain   = 1.0f;   // smoothed applied gain
+
+// The BT stream hard-mutes on its own threshold, more aggressive than the local
+// path's expander/amp-mute, for two reasons: (1) the SBC encoder renders even a
+// few-dB residual floor as audible digital hash, so BT must reach true digital
+// silence where the local analog path tolerates a low floor; (2) during A2DP
+// streaming the radio's conducted TX transients lift the per-block floor peak up
+// to ~the local gate threshold, so the shared silence detector never commits --
+// this threshold sits clear of the floor + those transients. Below it for
+// GATE_MUTE_HOLD blocks, the BT program is driven to digital zero.
+#define BT_MUTE_THRESH_DB   -30.0f
+static int s_bt_gate_silence = 0;   // consecutive below-threshold blocks (BT mute hold)
+
 static uint32_t s_last_gen = 0xffffffffu;
 // Which local-path EQ profile is live: false = Speaker EQ (HP unplugged),
 // true = Headphone EQ (HP plugged). Set by dsp_set_hp_plugged(); s_hp_dirty
@@ -171,16 +194,21 @@ static void maybe_recompute(void)
     s_nr_hpf_on   = s.nr_hpf_hz   > 0 && s.nr_hpf_hz   < PIPE_RATE / 2;
     s_nr_lpf_on   = s.nr_lpf_hz   > 0 && s.nr_lpf_hz   < PIPE_RATE / 2;
     s_nr_notch_on = s.nr_notch_hz > 0 && s.nr_notch_hz < PIPE_RATE / 2;
+    // Zero both the local and BT delay lines when a filter is off so toggling it
+    // on later starts clean on each path.
     if (s_nr_hpf_on)
         dsps_biquad_gen_hpf_f32(s_nr_hpf, (float)s.nr_hpf_hz / PIPE_RATE, Q_SHELF);
-    else memset(s_nr_w_hpf, 0, sizeof(s_nr_w_hpf));
+    else { memset(s_nr_w_hpf, 0, sizeof(s_nr_w_hpf));
+           memset(s_bt_nr_w_hpf, 0, sizeof(s_bt_nr_w_hpf)); }
     if (s_nr_lpf_on)
         dsps_biquad_gen_lpf_f32(s_nr_lpf, (float)s.nr_lpf_hz / PIPE_RATE, Q_SHELF);
-    else memset(s_nr_w_lpf, 0, sizeof(s_nr_w_lpf));
+    else { memset(s_nr_w_lpf, 0, sizeof(s_nr_w_lpf));
+           memset(s_bt_nr_w_lpf, 0, sizeof(s_bt_nr_w_lpf)); }
     if (s_nr_notch_on)
         dsps_biquad_gen_notch_f32(s_nr_notch, (float)s.nr_notch_hz / PIPE_RATE,
                                   -40.0f, (float)s.nr_notch_q);
-    else memset(s_nr_w_notch, 0, sizeof(s_nr_w_notch));
+    else { memset(s_nr_w_notch, 0, sizeof(s_nr_w_notch));
+           memset(s_bt_nr_w_notch, 0, sizeof(s_bt_nr_w_notch)); }
 
     s_gate_on        = s.nr_gate_thresh_db < 0;   // 0 dBFS threshold = off
     s_gate_thresh_db = (float)s.nr_gate_thresh_db;
@@ -356,14 +384,16 @@ void dsp_process_bt(int16_t *stereo, size_t frames)
     if (frames > MAX_BLOCK) frames = MAX_BLOCK;
     maybe_recompute();
 
-    // Decide whether the BT stream needs any processing this block. When BT EQ is
-    // off, the volume is at unity (and the smoothed gain has settled there), and
-    // no cue is playing, the stream passes through untouched (full fidelity,
-    // cheap). This is the common default case.
-    bool cue       = (s_sfx_gain > 0.0f) && sfx_cue_active();
+    // Decide whether the BT stream needs any processing this block. It passes
+    // through untouched (full fidelity, cheap) only when nothing is active: BT EQ
+    // off, volume at unity and settled, no cue, AND no noise reduction to run.
+    // With `nr` on -- the default, so the SBC encoder isn't handed the raw capture
+    // floor to render as digital hash -- nr_active holds and we always process.
+    bool cue        = (s_sfx_gain > 0.0f) && sfx_cue_active();
     bool vol_active = (s_bt_vol_target < 0.999f) ||
                       (fabsf(s_bt_cur_gain - 1.0f) > 0.0005f);
-    if (!s_bt_eq_on && !vol_active && !cue) {
+    bool nr_active  = s_nr_hpf_on || s_nr_lpf_on || s_nr_notch_on || s_gate_on;
+    if (!s_bt_eq_on && !vol_active && !cue && !nr_active) {
         s_bt_cur_gain = s_bt_vol_target;   // keep settled at unity, no audio touched
         return;
     }
@@ -376,6 +406,22 @@ void dsp_process_bt(int16_t *stereo, size_t frames)
         r[i] = (float)stereo[i * 2 + 1];
     }
 
+    // Noise reduction: shared coefficients with the local path, BT delay lines.
+    // Strips the captured hum (HPF), hiss (LPF), and the aliased PWM whine (notch)
+    // out of the stream before it reaches the SBC encoder.
+    if (s_nr_hpf_on) {
+        dsps_biquad_f32(l, l, frames, s_nr_hpf, s_bt_nr_w_hpf[0]);
+        dsps_biquad_f32(r, r, frames, s_nr_hpf, s_bt_nr_w_hpf[1]);
+    }
+    if (s_nr_lpf_on) {
+        dsps_biquad_f32(l, l, frames, s_nr_lpf, s_bt_nr_w_lpf[0]);
+        dsps_biquad_f32(r, r, frames, s_nr_lpf, s_bt_nr_w_lpf[1]);
+    }
+    if (s_nr_notch_on) {
+        dsps_biquad_f32(l, l, frames, s_nr_notch, s_bt_nr_w_notch[0]);
+        dsps_biquad_f32(r, r, frames, s_nr_notch, s_bt_nr_w_notch[1]);
+    }
+
     // EQ (per channel, each biquad keeps its own delay line).
     if (s_bt_eq_on) {
         dsps_biquad_f32(l, l, frames, s_bt_coef_bass,   s_btw_bass[0]);
@@ -386,14 +432,48 @@ void dsp_process_bt(int16_t *stereo, size_t frames)
         dsps_biquad_f32(r, r, frames, s_bt_coef_treble, s_btw_treble[1]);
     }
 
-    // Digital volume (smoothed per sample, click-free) then the shared SFX cue
-    // mix (post-volume, fixed level, same samples the speaker path mixes).
+    // Noise gate: same downward-expander law as the local path (target from this
+    // block's post-EQ peak), its own smoothed gain. Fades the program to silence
+    // in quiet passages so the encoder sees true silence instead of the low-level
+    // floor. No amp-mute side effect -- that is the local speaker's concern.
+    if (s_gate_on) {
+        float pk = 0.0f;
+        for (size_t i = 0; i < frames; i++) {
+            float a = fabsf(l[i]); if (a > pk) pk = a;
+            a = fabsf(r[i]);       if (a > pk) pk = a;
+        }
+        float pk_db = (pk > 1.0f) ? 20.0f * log10f(pk / 32768.0f) : -120.0f;
+        float g_db  = (pk_db >= s_gate_thresh_db) ? 0.0f
+                      : fmaxf(-s_gate_range_db, 2.0f * (pk_db - s_gate_thresh_db));
+        s_bt_gate_target = db_to_lin(g_db);
+        // Sustained silence below the BT mute threshold: hard-mute to true digital
+        // zero rather than the expander's partial floor, so the encoder sees actual
+        // silence (not a -few-dB residual it renders as hash). Own counter/threshold
+        // (see BT_MUTE_THRESH_DB) so it fires on the low-level GBA floor -- which
+        // parks near the local gate threshold and, with the TX transients, never
+        // trips the shared silence detector -- independently of the local amp-mute.
+        if (pk_db < BT_MUTE_THRESH_DB) {
+            if (s_bt_gate_silence < GATE_MUTE_HOLD) s_bt_gate_silence++;
+        } else {
+            s_bt_gate_silence = 0;
+        }
+        if (s_bt_gate_silence >= GATE_MUTE_HOLD) s_bt_gate_target = 0.0f;
+    } else {
+        s_bt_gate_target = 1.0f;
+        s_bt_gate_silence = 0;
+    }
+
+    // Digital volume (smoothed per sample, click-free) x the gate gain, then the
+    // shared SFX cue mix (post-volume/gate, fixed level -- cues are not gated, same
+    // as the local path).
     const float *cue_buf = cue ? sfx_cue() : NULL;
     for (size_t i = 0; i < frames; i++) {
         s_bt_cur_gain += (s_bt_vol_target - s_bt_cur_gain) * VOL_SMOOTH;
+        float gc = (s_bt_gate_target > s_bt_gate_gain) ? GATE_ATTACK : GATE_RELEASE;
+        s_bt_gate_gain += (s_bt_gate_target - s_bt_gate_gain) * gc;
         float c = cue_buf ? s_sfx_gain * cue_buf[i] : 0.0f;
-        stereo[i * 2]     = sat16(l[i] * s_bt_cur_gain + c);
-        stereo[i * 2 + 1] = sat16(r[i] * s_bt_cur_gain + c);
+        stereo[i * 2]     = sat16(l[i] * s_bt_cur_gain * s_bt_gate_gain + c);
+        stereo[i * 2 + 1] = sat16(r[i] * s_bt_cur_gain * s_bt_gate_gain + c);
     }
 }
 

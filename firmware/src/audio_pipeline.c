@@ -199,10 +199,12 @@ static void pipeline_task(void *arg)
         // the same samples can be mixed into both the BT and DAC paths.
         sfx_generate_block(frames);
 
-        // BT DSP: optional source-side EQ + digital volume + SFX cue mix, in
-        // place on out_buf before the stream-buffer push so the SBC encoder sees
-        // the processed signal. No-op passthrough when BT EQ is off, BT volume is
-        // unity, and no cue is playing.
+        // BT DSP: source-side noise reduction (HPF/LPF/notch + gate) + optional EQ
+        // + digital volume + SFX cue mix, in place on out_buf before the
+        // stream-buffer push so the SBC encoder sees the cleaned, gated signal (not
+        // the raw capture floor, which SBC renders as audible digital hash). No-op
+        // passthrough only when nr is off AND BT EQ is off, volume is unity, and no
+        // cue is playing.
         dsp_process_bt(out_buf, frames);
 
         // Push the interleaved stereo PCM into the stream buffer for A2DP.
