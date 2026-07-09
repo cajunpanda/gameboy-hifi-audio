@@ -30,10 +30,11 @@ pio run -t menuconfig            # IDF menuconfig
 ```
 
 `pio device monitor` needs a TTY, which a sandboxed agent shell usually lacks.
-Use `tools/serial_proxy.py` instead: `monitor` starts it, `tail -f
-/tmp/gba_serial.log` watches it, `flash --env prod` builds and uploads.
-Never `pkill -f`/`pgrep -f` the proxy (the `-f` match kills the shell); use the
-`stop` subcommand.
+Use the **serial-proxy skill** instead (`~/.claude/skills/serial-proxy/serial_proxy.py`,
+a generic global tool — no longer in this repo): `monitor --port FTDI` starts it, `tail -f
+/tmp/serial_proxy.log` watches it, `flash --env prod` builds and uploads (run it from the
+repo so it finds `firmware/platformio.ini`). Never `pkill -f`/`pgrep -f` the proxy (the
+`-f` match kills the shell); use the `stop` subcommand.
 
 `sdkconfig.defaults` is the source of truth. The generated `sdkconfig.prod`
 is not checked in; delete it to regenerate. Adding a new `CONFIG_*` needs that

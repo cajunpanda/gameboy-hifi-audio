@@ -4,9 +4,9 @@
 Capture with the `wavedump` console command (pair with `radio off` for a clean
 GBA-only noise floor), then run this against the serial log:
 
-    tools/plot_wavedump.py                     # reads /tmp/gba_serial.log
+    tools/plot_wavedump.py                     # reads /tmp/serial_proxy.log
     tools/plot_wavedump.py somelog.txt
-    tail -f /tmp/gba_serial.log | tools/plot_wavedump.py -
+    tail -f /tmp/serial_proxy.log | tools/plot_wavedump.py -
     tools/plot_wavedump.py --plot noise.png    # also save waveform+spectrum (needs matplotlib)
 
 Prints RMS/peak level, the spectral noise floor, and any dominant tones, so you
@@ -120,8 +120,8 @@ def make_plot(a, fs, path):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("logfile", nargs="?", default="/tmp/gba_serial.log",
-                    help="serial log to scan (default /tmp/gba_serial.log; '-' = stdin)")
+    ap.add_argument("logfile", nargs="?", default="/tmp/serial_proxy.log",
+                    help="serial log to scan (default /tmp/serial_proxy.log; '-' = stdin)")
     ap.add_argument("--plot", metavar="PNG", help="save a waveform+spectrum plot")
     args = ap.parse_args()
 

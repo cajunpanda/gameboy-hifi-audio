@@ -38,21 +38,28 @@ regenerate. Adding a new `CONFIG_*` symbol in `Kconfig.projbuild` also needs
 that delete plus a rebuild, otherwise the build reports the symbol as
 undeclared.
 
-## serial_proxy.py
+## serial-proxy (global skill)
 
 `pio device monitor` needs a real terminal. For scripted work, or to avoid
-fighting over the serial port, use `tools/serial_proxy.py`. It owns the stable
-`/dev/serial/by-id/*` port, tees everything to `/tmp/gba_serial.log`, and
-survives the board reconnecting.
+fighting over the serial port, use the **serial-proxy skill** — a generic bench
+tool that lives outside this repo at
+`~/.claude/skills/serial-proxy/serial_proxy.py` (alias it as `serial_proxy` for
+brevity). It owns the stable `/dev/serial/by-id/*` port, tees everything to
+`/tmp/serial_proxy.log`, and survives the board reconnecting.
 
 ```sh
-python3 tools/serial_proxy.py monitor       # start the proxy (run once)
-tail -f /tmp/gba_serial.log                  # watch the output
-python3 tools/serial_proxy.py flash --env prod       # pause, build, upload, resume
-python3 tools/serial_proxy.py flash --env prod --fs  # ...and reflash the clip image
-python3 tools/serial_proxy.py reset
-python3 tools/serial_proxy.py stop
+SP=~/.claude/skills/serial-proxy/serial_proxy.py
+python3 $SP monitor --port FTDI       # start the proxy (run once; pick the FTDI adapter)
+tail -f /tmp/serial_proxy.log         # watch the output
+python3 $SP flash --env prod          # pause, build, upload, resume (run from the repo)
+python3 $SP flash --env prod --fs     # ...and reflash the clip image
+python3 $SP reset
+python3 $SP stop
 ```
+
+`flash` auto-detects this project's `firmware/platformio.ini` when run from the
+repo (or pass `--fw-dir firmware`). `--port FTDI` is needed here because the
+bench also enumerates the DPS-150 supply as a serial adapter.
 
 The `flash` subcommand pauses the proxy, builds and uploads, then resumes and
 resets the board, so you do not have to release and reclaim the port by hand.
@@ -89,7 +96,7 @@ image, so a plain flash leaves whatever clips were already on the board. The
 easiest way to (re)load the clips in `firmware/data/` is:
 
 ```sh
-python3 tools/serial_proxy.py flash --env prod --fs
+python3 ~/.claude/skills/serial-proxy/serial_proxy.py flash --env prod --fs
 ```
 
 `--fs` builds the `littlefs_storage_bin` target (which owns the exact
