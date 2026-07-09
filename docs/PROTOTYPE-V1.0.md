@@ -157,6 +157,42 @@ Two findings:
   lands "if it happens to fall in a wake window"). A cabled `reset` also returns
   to Mode B since the mode preference is not persisted unless saved.
 
+## Power profile (bench, 3.2 V rail)
+
+Rail current per operating mode, measured 2026-07-09 on the bench supply (FNIRSI
+DPS-150 at 3.2 V, i.e. 2xAA) with the GBA running the Audio Test ROM's 1 kHz
+tone. All figures are **total rail current = GBA console + mod board**; the GBA
+alone is isolated by holding the ESP32 in reset (EN low). Mode A/B volume is the
+VOL wheel (the console sleeps in Mode A), speaker vs headphone by the jack.
+
+| Operating point | I @ 3.2 V | P |
+|---|---|---|
+| GBA baseline (ESP32 held in reset) | 0.096 A | 0.31 W |
+| Mode B (DSP) speaker — 0 / 50 / 100 % | 0.134 / 0.134 / 0.157 A | 0.43 / 0.43 / 0.50 W |
+| Mode B headphone (any volume) | 0.140 A | 0.45 W |
+| Mode A (bypass, light-sleep) speaker — 0 / 50 / 100 % | 0.126 / 0.126 / 0.148 A | 0.40 / 0.40 / 0.47 W |
+| Mode A headphone — 50 % | 0.122 A | 0.39 W |
+| Bluetooth A2DP streaming to a sink | 0.228 A | 0.73 W |
+
+Findings:
+
+- **Bluetooth streaming is the heaviest mode by far** — 0.228 A, ~+130 mA over
+  the GBA baseline. SBC encode plus BR/EDR radio TX (at -3 dBm) dominates, well
+  above any local-playback state. Primary target for battery-life work when BT is
+  in use.
+- **Mode A runs measurably below Mode B** at matched loudness — the analog bypass
+  plus duty-cycled light sleep avoids the always-on DSP overhead (Mode A headphone
+  at 0.122 A is the lowest active state). Confirms the battery-saver intent.
+- **Speaker output only draws extra current above ~50 % wheel** (0 -> 50 % is flat
+  in both modes; 1 kHz into the small speaker). Headphone draw is
+  volume-independent — the cost is simply the HP amp being on.
+
+Measurement note: the initial Bluetooth reading came out spuriously low
+(0.117 A) — the DPS-150's current sense had momentarily misread (caught when it
+diverged from the front panel); a full unit power-cycle (not just a USB replug)
+restored it and BT re-measured at 0.228 A. The other rows are consistent with
+prior bench observations.
+
 ## Boot latency and the startup chime
 
 The mod boots on the GBA's switched rail, so the Game Boy power-on chime is the
