@@ -2,470 +2,768 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>GameBoy HiFi - config</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#111512">
+<title>GameBoy HiFi</title>
 <style>
+@layer reset, tokens, base, layout, components, motion;
+
+/* ============================ reset ============================ */
+@layer reset {
+  *, *::before, *::after { box-sizing: border-box; }
+  * { margin: 0; }
+  html { -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
+  body { min-height: 100dvh; -webkit-font-smoothing: antialiased; }
+  button, input { font: inherit; color: inherit; }
+  h1, h2, h3 { font-weight: inherit; font-size: inherit; }
+  canvas { display: block; }
+  [hidden] { display: none !important; }
+}
+
+/* ============================ tokens ============================ */
+@layer tokens {
   :root {
     color-scheme: dark;
-    --bg:        oklch(0.17 0.015 285);
-    --surface:   oklch(0.215 0.018 285);
-    --control:   oklch(0.265 0.02 285);
-    --border:    oklch(0.32 0.02 285);
-    --border-bright: oklch(0.42 0.03 285);
-    --ink:       oklch(0.97 0.006 285);
-    --muted:     oklch(0.76 0.02 285);
-    --faint:     oklch(0.62 0.02 285);
-    --accent:    oklch(0.66 0.17 286);
-    --accent-bright: oklch(0.72 0.17 286);
-    --accent-ink: oklch(0.99 0 0);
-    --ok:        oklch(0.80 0.15 155);
-    --ok-dim:    oklch(0.50 0.10 155);
-    --warn:      oklch(0.82 0.13 80);
-    --danger:    oklch(0.70 0.18 22);
 
-    --r-sm: 8px; --r-md: 12px; --r-lg: 18px;
+    /* graphite ramp — cool near-black test-gear enclosure */
+    --bg:        oklch(0.165 0.006 200);
+    --bg-2:      oklch(0.195 0.006 200);
+    --surface:   oklch(0.216 0.007 200);
+    --surface-2: oklch(0.245 0.008 200);
+    --control:   oklch(0.275 0.009 200);
+    --line:      oklch(0.315 0.010 200);
+    --line-2:    oklch(0.40  0.012 200);
+
+    --ink:    oklch(0.965 0.004 200);
+    --muted:  oklch(0.755 0.008 200);
+    --faint:  oklch(0.605 0.010 200);
+
+    /* signal — phosphor lime (the DMG nod, refined); the one hot accent */
+    --signal:      oklch(0.865 0.19 129);
+    --signal-2:    oklch(0.80  0.185 130);
+    --signal-dim:  oklch(0.60  0.15 132);
+    --signal-ink:  oklch(0.20  0.04 130);     /* near-black text on a lime fill */
+    --signal-soft: oklch(0.865 0.19 129 / 0.15);
+
+    /* violet — the stereo R-channel + secondary state */
+    --violet:   oklch(0.64 0.19 292);
+    --violet-2: oklch(0.72 0.17 292);
+
+    --warn:   oklch(0.82 0.14 82);
+    --danger: oklch(0.66 0.19 25);
+
+    --r-xs: 6px; --r-sm: 9px; --r-md: 13px; --r-lg: 18px; --r-pill: 999px;
+
+    --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Menlo, Consolas, monospace;
+
     --ease: cubic-bezier(0.22, 1, 0.36, 1);
-    --z-header: 10;
+
+    --z-topbar: 20;
+    --z-footbar: 30;
+
+    --rail-w: 15rem;
+    --content-w: 42rem;
 
     font-synthesis: none;
-    -webkit-text-size-adjust: 100%;
   }
+}
 
-  * { box-sizing: border-box; }
-  html { -webkit-tap-highlight-color: transparent; }
+/* ============================ base ============================ */
+@layer base {
   body {
-    font: 400 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font: 400 16px/1.55 var(--font-sans);
     color: var(--ink);
-    background:
-      radial-gradient(120% 80% at 50% -10%, oklch(0.26 0.05 286 / 0.45), transparent 60%),
-      var(--bg);
-    background-attachment: fixed;
-    margin: 0;
-    min-height: 100dvh;
+    background: var(--bg);
+    font-variant-numeric: tabular-nums;
   }
 
-  .wrap { max-width: 33rem; margin: 0 auto; padding: 0 1rem 4rem; }
+  h2, h3 { letter-spacing: -0.01em; text-wrap: balance; }
 
-  /* ---- header ---- */
-  header {
-    position: sticky; top: 0; z-index: var(--z-header);
-    display: flex; align-items: center; gap: .75rem;
-    padding: .85rem 0 .8rem;
-    margin-bottom: .5rem;
-    background: linear-gradient(var(--bg) 65%, transparent);
-    backdrop-filter: blur(6px);
+  :where(a, button, input, [tabindex]):focus-visible {
+    outline: 2px solid var(--signal);
+    outline-offset: 2px;
+    border-radius: var(--r-xs);
   }
+
+  a { color: var(--signal); text-underline-offset: 2px; }
+  a:hover { color: var(--signal-2); }
+
+  code {
+    font-family: var(--font-mono);
+    font-size: 0.86em;
+    background: var(--control);
+    padding: 0.05em 0.35em;
+    border-radius: 5px;
+  }
+
+  /* small equipment label — mono, the instrument idiom */
+  .label-mono {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    font-weight: 500;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+}
+
+/* ============================ layout ============================ */
+@layer layout {
+  .app { min-height: 100dvh; }
+
+  .rail-top { padding-inline: clamp(0.9rem, 4vw, 1.15rem); }
+  .main {
+    container: main / inline-size;
+    padding: 0 clamp(0.9rem, 4vw, 1.15rem) 6.5rem;
+  }
+  .main-inner { max-width: var(--content-w); margin-inline: auto; }
+
+  /* ---- mobile: rail dissolves; top block sticks, action bar pins bottom ---- */
+  @media (max-width: 819px) {
+    .rail { display: contents; }
+    .rail-top {
+      position: sticky; top: 0; z-index: var(--z-topbar);
+      background: var(--bg);
+      border-bottom: 1px solid var(--line);
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      gap: 0.5rem 0.8rem;
+      padding-block: 0.75rem 0;
+    }
+    .brand { grid-column: 1; }
+    #status { grid-column: 3; justify-self: end; }
+    .nav { grid-column: 1 / -1; }
+    .rail-foot {
+      position: fixed; inset: auto 0 0 0; z-index: var(--z-footbar);
+      padding: 1.4rem clamp(0.9rem, 4vw, 1.15rem) calc(0.7rem + env(safe-area-inset-bottom, 0));
+      background: linear-gradient(transparent, var(--bg) 32%);
+      pointer-events: none;
+    }
+    .rail-foot > * { pointer-events: auto; }
+    .brand .sub { display: none; }
+  }
+
+  /* ---- desktop: two-pane console ---- */
+  @media (min-width: 820px) {
+    .app {
+      display: grid;
+      grid-template-columns: var(--rail-w) 1fr;
+    }
+    .rail {
+      grid-row: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 1.4rem;
+      position: sticky; top: 0; align-self: start;
+      height: 100dvh;
+      padding: 1.35rem 1.15rem;
+      border-right: 1px solid var(--line);
+      background: var(--bg-2);
+    }
+    .rail-top { padding-inline: 0; display: flex; flex-direction: column; gap: 1.15rem; }
+    .rail-top #status { align-self: start; }
+    .rail-foot { margin-top: auto; }
+    .main { padding: 1.5rem clamp(1.1rem, 3vw, 2.4rem) 4rem; }
+    .main-inner { margin-inline: 0; max-width: 46rem; }
+  }
+}
+
+/* ============================ components ============================ */
+@layer components {
+
+  /* ---- brand ---- */
+  .brand { display: flex; align-items: center; gap: 0.65rem; min-width: 0; }
   .mark {
     flex: 0 0 auto;
     display: grid; place-items: center;
-    width: 2.1rem; height: 2.1rem; border-radius: var(--r-sm);
-    background: linear-gradient(145deg, var(--accent), oklch(0.52 0.16 296));
-    color: var(--accent-ink);
-    font-weight: 700; font-size: .82rem; letter-spacing: -.02em;
-    box-shadow: 0 1px 0 oklch(1 0 0 / .15) inset, 0 6px 16px oklch(0.45 0.18 286 / .35);
+    width: 2.2rem; aspect-ratio: 1;
+    border-radius: var(--r-sm);
+    background: var(--bg);
+    border: 1px solid var(--line-2);
   }
-  .title { flex: 1 1 auto; min-width: 0; }
-  .title h1 { font-size: 1.18rem; font-weight: 650; letter-spacing: -.015em; margin: 0; line-height: 1.1; }
-  .title p { margin: 0; font-size: .8rem; color: var(--faint); }
+  .mark svg { width: 1.15rem; height: 1.15rem; }
+  .wm { font-family: var(--font-mono); line-height: 1.05; min-width: 0; }
+  .wm .name { font-size: 0.98rem; font-weight: 600; letter-spacing: -0.02em; }
+  .wm .name b { font-weight: 600; color: var(--signal); }
+  .wm .sub { display: block; margin-top: 0.12rem; font-size: 0.62rem; letter-spacing: 0.14em;
+             text-transform: uppercase; color: var(--faint); }
 
   /* ---- status pill ---- */
   .pill {
     flex: 0 0 auto;
-    display: inline-flex; align-items: center; gap: .45rem;
-    padding: .34rem .7rem .34rem .6rem;
-    border-radius: 999px; font-size: .78rem; font-weight: 550;
-    border: 1px solid var(--border);
+    display: inline-flex; align-items: center; gap: 0.45rem;
+    padding: 0.32rem 0.7rem 0.32rem 0.58rem;
+    border-radius: var(--r-pill);
+    font-family: var(--font-mono); font-size: 0.72rem; font-weight: 500; letter-spacing: 0.02em;
+    border: 1px solid var(--line);
     background: var(--surface);
     color: var(--muted);
-    transition: color .2s, border-color .2s, background .2s;
+    transition: color 0.2s, border-color 0.2s, background 0.2s;
   }
-  .dot { width: .5rem; height: .5rem; border-radius: 50%; background: var(--faint);
-         transition: background .2s, box-shadow .2s; flex: 0 0 auto; }
-  .pill[data-state="connected"] { color: var(--ok); border-color: var(--ok-dim); background: oklch(0.42 0.08 155 / .18); }
-  .pill[data-state="connected"] .dot { background: var(--ok); box-shadow: 0 0 0 3px oklch(0.80 0.15 155 / .22); }
-  .pill[data-state="connecting"] { color: var(--warn); border-color: oklch(0.55 0.10 80); }
+  .dot {
+    width: 0.5rem; aspect-ratio: 1; border-radius: 50%;
+    background: var(--faint); flex: 0 0 auto;
+    transition: background 0.2s, box-shadow 0.2s;
+  }
+  .pill[data-state="connected"] {
+    color: var(--signal); border-color: var(--signal-dim);
+    background: oklch(0.60 0.15 132 / 0.14);
+  }
+  .pill[data-state="connected"] .dot { background: var(--signal); box-shadow: 0 0 0 3px var(--signal-soft); }
+  .pill[data-state="connecting"] { color: var(--warn); border-color: oklch(0.55 0.10 82); }
   .pill[data-state="connecting"] .dot { background: var(--warn); animation: pulse 1s ease-in-out infinite; }
-  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
 
-  /* ---- connect screen ---- */
-  .connect-card {
-    text-align: center;
-    padding: 2.4rem 1.5rem 2rem;
-    border: 1px solid var(--border);
-    border-radius: var(--r-lg);
-    background:
-      radial-gradient(90% 60% at 50% 0%, oklch(0.30 0.06 286 / .5), transparent 70%),
-      var(--surface);
+  /* ---- nav (sections) ---- */
+  .nav { display: flex; gap: 0.15rem; }
+  .nav .tab {
+    position: relative;
+    background: none; border: 0; cursor: pointer;
+    font-family: var(--font-mono); font-size: 0.82rem; font-weight: 500; letter-spacing: 0.04em;
+    color: var(--faint);
+    transition: color 0.16s, background 0.16s;
   }
-  .connect-card .glyph {
-    width: 3.5rem; height: 3.5rem; margin: 0 auto 1.1rem;
-    display: grid; place-items: center; border-radius: var(--r-md);
-    background: var(--control); border: 1px solid var(--border-bright);
-    color: var(--accent-bright);
+  .nav .tab:hover { color: var(--muted); }
+  .nav .tab[aria-selected="true"] { color: var(--ink); }
+
+  @media (max-width: 819px) {
+    .nav { border-bottom: 1px solid var(--line); }
+    .nav .tab {
+      flex: 1 1 0; padding: 0.6rem 0.4rem 0.7rem; text-align: center; text-transform: uppercase;
+    }
+    .nav .tab[aria-selected="true"]::after {
+      content: ""; position: absolute; left: 0.5rem; right: 0.5rem; bottom: -1px; height: 2px;
+      background: var(--signal);
+    }
   }
-  .connect-card h2 { font-size: 1.45rem; font-weight: 650; letter-spacing: -.02em; margin: 0 0 .4rem;
-                     text-wrap: balance; }
-  .connect-card p { color: var(--muted); margin: 0 auto 1.5rem; max-width: 24rem; font-size: .95rem; }
-  .connect-card .req { margin-top: 1.4rem; font-size: .8rem; color: var(--faint); line-height: 1.7; }
-  .connect-card .req b { color: var(--muted); font-weight: 550; }
+  @media (min-width: 820px) {
+    .nav { flex-direction: column; gap: 0.2rem; }
+    .nav .tab {
+      display: flex; align-items: center; gap: 0.6rem;
+      padding: 0.55rem 0.7rem; border-radius: var(--r-sm); text-align: left; text-transform: uppercase;
+    }
+    .nav .tab::before {
+      content: ""; width: 0.5rem; aspect-ratio: 1; border-radius: 1px;
+      background: var(--line-2); transition: background 0.16s, box-shadow 0.16s;
+    }
+    .nav .tab:hover { background: var(--surface); }
+    .nav .tab[aria-selected="true"] { background: var(--surface); }
+    .nav .tab[aria-selected="true"]::before { background: var(--signal); box-shadow: 0 0 8px var(--signal); }
+  }
+
+  /* ---- rail footer (mode + disconnect + save) ---- */
+  .rail-foot { display: flex; align-items: center; gap: 0.8rem; }
+  .foot-actions { display: flex; align-items: center; gap: 0.55rem; }
+  .saved {
+    font-family: var(--font-mono); font-size: 0.72rem; color: var(--signal); font-weight: 500;
+    white-space: nowrap; opacity: 0; transition: opacity 0.2s;
+  }
+  .saved.show { opacity: 1; }
+  @media (max-width: 819px) {
+    .rail-foot .inner-foot {
+      position: relative; width: 100%;
+      display: flex; align-items: center; gap: 0.6rem;
+      padding: 0.55rem 0.55rem 0.55rem 0.9rem;
+      background: var(--surface-2); border: 1px solid var(--line-2); border-radius: var(--r-md);
+      box-shadow: 0 8px 24px oklch(0 0 0 / 0.35);
+    }
+    .rail-foot .mode-chip { flex: 1 1 auto; min-width: 0; overflow: hidden; }
+    .rail-foot .btn { padding: 0.5rem 0.75rem; font-size: 0.85rem; }
+    /* saved confirmation floats above the bar so it never shifts the row */
+    .rail-foot .saved {
+      position: absolute; top: -1.75rem; right: 0.4rem;
+      padding: 0.2rem 0.55rem; border-radius: var(--r-sm);
+      background: var(--surface-2); border: 1px solid var(--line-2);
+    }
+  }
+  @media (min-width: 820px) {
+    .rail-foot { flex-direction: column; align-items: stretch; gap: 0.9rem;
+                 padding-top: 1rem; border-top: 1px solid var(--line); }
+    .rail-foot .inner-foot { display: contents; }
+    .foot-actions { flex-direction: column; align-items: stretch; gap: 0.45rem; }
+    .foot-actions .btn { width: 100%; }
+    .foot-actions #save { order: 1; }
+    .foot-actions #disconnect { order: 2; }
+    .foot-actions .saved { order: 3; text-align: center; }
+  }
 
   /* ---- buttons ---- */
-  button {
-    font: inherit; font-weight: 550; font-size: .95rem;
-    padding: .6rem 1rem; border-radius: var(--r-sm); cursor: pointer;
-    border: 1px solid var(--border-bright); background: var(--control); color: var(--ink);
-    transition: background .15s, border-color .15s, transform .08s, box-shadow .15s;
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 0.45rem;
+    font-weight: 550; font-size: 0.92rem;
+    padding: 0.6rem 1rem; border-radius: var(--r-sm); cursor: pointer;
+    border: 1px solid var(--line-2); background: var(--control); color: var(--ink);
+    transition: background 0.15s, border-color 0.15s, transform 0.07s, opacity 0.15s;
   }
-  button:hover { border-color: var(--faint); background: oklch(0.30 0.02 285); }
-  button:active { transform: translateY(1px); }
-  button:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 2px; }
-  button:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+  .btn:hover { border-color: var(--faint); background: var(--surface-2); }
+  .btn:active { transform: translateY(1px); }
+  .btn:disabled { opacity: 0.42; cursor: not-allowed; transform: none; }
   .btn-primary {
-    border-color: transparent; color: var(--accent-ink);
-    background: linear-gradient(145deg, var(--accent-bright), var(--accent));
-    box-shadow: 0 1px 0 oklch(1 0 0 / .18) inset, 0 6px 18px oklch(0.45 0.18 286 / .3);
+    border-color: transparent; color: var(--signal-ink); font-weight: 600;
+    background: var(--signal);
   }
-  .btn-primary:hover { background: linear-gradient(145deg, oklch(0.76 0.17 286), var(--accent-bright)); }
-  .btn-lg { padding: .8rem 1.6rem; font-size: 1.02rem; border-radius: var(--r-md); }
-  .btn-ghost { background: transparent; border-color: var(--border); color: var(--muted); }
+  .btn-primary:hover { background: var(--signal-2); }
+  .btn-ghost { background: transparent; border-color: var(--line); color: var(--muted); }
   .btn-ghost:hover { color: var(--ink); border-color: var(--faint); background: var(--surface); }
+  .btn-lg { padding: 0.8rem 1.5rem; font-size: 1rem; border-radius: var(--r-md); }
 
-  /* ---- panel + sections ---- */
-  #panel { border: 0; padding: 0; margin: 0; min-width: 0; }
-  #panel[hidden] { display: none; }
-  .panel-in > * { animation: rise .5s var(--ease) backwards; }
-  .panel-in > *:nth-child(2) { animation-delay: .04s; }
-  .panel-in > *:nth-child(3) { animation-delay: .08s; }
-  .panel-in > *:nth-child(4) { animation-delay: .12s; }
-  .panel-in > *:nth-child(5) { animation-delay: .16s; }
-  .panel-in > *:nth-child(6) { animation-delay: .2s; }
-  @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-
-  section.group {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--r-md);
-    padding: .35rem 1rem 1rem;
-    margin-bottom: .85rem;
+  /* ---- connect screen ---- */
+  .connect {
+    padding: clamp(2rem, 6vw, 3.2rem) clamp(1.3rem, 4vw, 2.4rem);
+    border: 1px solid var(--line); border-radius: var(--r-lg);
+    margin-top: 1.6rem; background: var(--surface);
   }
-  .group-head {
-    display: flex; align-items: center; gap: .6rem;
-    padding: .7rem .15rem .6rem;
-    border-bottom: 1px solid var(--border);
-    margin-bottom: .85rem;
+  .connect .glyph {
+    width: 3.4rem; aspect-ratio: 1; margin-bottom: 1.3rem;
+    display: grid; place-items: center; border-radius: var(--r-md);
+    background: var(--bg); border: 1px solid var(--line-2); color: var(--signal);
   }
-  .group-head h2 { font-size: 1rem; font-weight: 600; letter-spacing: -.01em; margin: 0; flex: 1 1 auto; }
-  .group-head .hint { font-size: .78rem; color: var(--faint); font-weight: 400; }
+  .connect h2 { font-size: clamp(1.5rem, 4vw, 1.9rem); font-weight: 620; margin-bottom: 0.5rem; letter-spacing: -0.02em; }
+  .connect p { color: var(--muted); font-size: 0.98rem; text-wrap: pretty; max-width: 34ch; margin-bottom: 1.7rem; }
+  .connect .req {
+    margin-top: 1.6rem; padding-top: 1.3rem; border-top: 1px solid var(--line);
+    font-size: 0.82rem; color: var(--faint); line-height: 1.8; max-width: 46ch;
+  }
+  .connect .req b { color: var(--muted); font-weight: 550; }
 
-  /* ---- controls ---- */
-  .ctl { margin: .9rem .15rem; }
-  .ctl-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: .45rem; }
-  .ctl-head label { font-size: .92rem; color: var(--ink); }
-  .ctl-head output { font-size: .9rem; font-variant-numeric: tabular-nums; color: var(--accent-bright); font-weight: 600; }
+  /* ---- cards ---- */
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 1rem; }
+  .stack > * + * { margin-top: 0.8rem; }
+  .card-head { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.85rem; }
+  .card-head h2 { font-size: 0.95rem; font-weight: 600; color: var(--ink); flex: 1 1 auto; }
+  .card-head .hint { font-family: var(--font-mono); font-size: 0.72rem; color: var(--faint); }
+
+  /* ---- slider control ---- */
+  .ctl { margin-block: 0.7rem; }
+  .ctl-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: 0.35rem; }
+  .ctl-head label { font-size: 0.9rem; }
+  .ctl-head output { font-family: var(--font-mono); font-size: 0.85rem; color: var(--signal); font-weight: 600; }
 
   input[type=range] {
-    -webkit-appearance: none; appearance: none; width: 100%; height: 1.5rem; margin: 0;
-    background: transparent; cursor: pointer;
+    -webkit-appearance: none; appearance: none; width: 100%; height: 1.5rem; background: transparent; cursor: pointer;
   }
-  input[type=range]::-webkit-slider-runnable-track { height: 6px; border-radius: 999px;
-    background: var(--control); border: 1px solid var(--border); }
-  input[type=range]::-moz-range-track { height: 6px; border-radius: 999px;
-    background: var(--control); border: 1px solid var(--border); }
-  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none;
-    width: 1.15rem; height: 1.15rem; border-radius: 50%; margin-top: calc(-.575rem + 3px);
-    background: var(--ink); border: 3px solid var(--accent); box-shadow: 0 1px 4px oklch(0 0 0 / .4);
-    transition: transform .1s; }
-  input[type=range]::-moz-range-thumb { width: 1.15rem; height: 1.15rem; border-radius: 50%;
-    background: var(--ink); border: 3px solid var(--accent); box-shadow: 0 1px 4px oklch(0 0 0 / .4); }
+  input[type=range]::-webkit-slider-runnable-track { height: 5px; border-radius: var(--r-pill); background: var(--control); border: 1px solid var(--line); }
+  input[type=range]::-moz-range-track { height: 5px; border-radius: var(--r-pill); background: var(--control); border: 1px solid var(--line); }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 1.15rem; aspect-ratio: 1; border-radius: 50%; margin-top: calc(-0.575rem + 2.5px);
+    background: var(--ink); border: 3px solid var(--signal); box-shadow: 0 1px 4px oklch(0 0 0 / 0.45);
+    transition: transform 0.1s;
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 1.15rem; height: 1.15rem; border-radius: 50%;
+    background: var(--ink); border: 3px solid var(--signal); box-shadow: 0 1px 4px oklch(0 0 0 / 0.45);
+  }
   input[type=range]:active::-webkit-slider-thumb { transform: scale(1.12); }
-  input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px oklch(0.66 0.17 286 / .35); }
+  input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px var(--signal-soft); }
 
-  /* toggle switch (native checkbox, restyled) */
-  .ctl-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin: .85rem .15rem; }
-  .ctl-row label { font-size: .92rem; color: var(--ink); }
-  .ctl-row .sub { font-size: .78rem; color: var(--faint); display: block; }
-  input.sw { -webkit-appearance: none; appearance: none; flex: 0 0 auto; cursor: pointer;
-    width: 2.65rem; height: 1.55rem; border-radius: 999px; margin: 0; position: relative;
-    background: var(--control); border: 1px solid var(--border-bright); transition: background .2s, border-color .2s; }
-  input.sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 1.2rem; height: 1.2rem;
-    border-radius: 50%; background: var(--muted); transition: transform .2s var(--ease), background .2s; }
-  input.sw:checked { background: var(--accent); border-color: transparent; }
-  input.sw:checked::after { transform: translateX(1.1rem); background: var(--accent-ink); }
-  input.sw:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 2px; }
+  /* ---- toggle ---- */
+  input.sw {
+    -webkit-appearance: none; appearance: none; flex: 0 0 auto; cursor: pointer;
+    width: 2.6rem; height: 1.5rem; border-radius: var(--r-pill); position: relative;
+    background: var(--control); border: 1px solid var(--line-2);
+    transition: background 0.2s, border-color 0.2s;
+  }
+  input.sw::after {
+    content: ""; position: absolute; top: 2px; left: 2px; width: 1.12rem; aspect-ratio: 1; border-radius: 50%;
+    background: var(--muted); transition: transform 0.2s var(--ease), background 0.2s;
+  }
+  input.sw:checked { background: var(--signal); border-color: transparent; }
+  input.sw:checked::after { transform: translateX(1.1rem); background: var(--signal-ink); }
 
-  input[type=number] { font: inherit; font-size: .92rem; font-variant-numeric: tabular-nums;
-    width: 5.5rem; padding: .45rem .6rem; text-align: right;
-    background: var(--control); color: var(--ink); border: 1px solid var(--border-bright); border-radius: var(--r-sm); }
-  input[type=number]:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 1px; border-color: transparent; }
-  input[type=text] { font: inherit; font-size: .92rem; flex: 1 1 auto; min-width: 0; padding: .55rem .7rem;
-    background: var(--control); color: var(--ink); border: 1px solid var(--border-bright); border-radius: var(--r-sm); }
-  input[type=text]:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 1px; border-color: transparent; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-block: 0.75rem; }
+  .row > label { font-size: 0.9rem; }
+  .row .sub { display: block; font-size: 0.78rem; color: var(--faint); margin-top: 0.15rem; }
 
-  /* mode status row */
-  .mode-status { display: flex; align-items: center; gap: .55rem; font-weight: 600; font-size: .95rem; }
-  .mode-status .dot { width: .55rem; height: .55rem; }
-  .mode-status[data-mode="A"] { color: var(--warn); }
-  .mode-status[data-mode="A"] .dot { background: var(--warn); }
-  .mode-status[data-mode="B"] { color: var(--ok); }
-  .mode-status[data-mode="B"] .dot { background: var(--ok); }
-  .note { font-size: .82rem; color: var(--muted); margin: .2rem .15rem .1rem; line-height: 1.5; }
+  input[type=number] {
+    width: 5.2rem; padding: 0.42rem 0.6rem; text-align: right; font-family: var(--font-mono); font-size: 0.88rem;
+    background: var(--control); border: 1px solid var(--line-2); border-radius: var(--r-sm);
+  }
+  input[type=number]:focus-visible { border-color: transparent; }
+  input[type=text] {
+    flex: 1 1 auto; min-width: 0; padding: 0.55rem 0.7rem; font-family: var(--font-mono); font-size: 0.88rem;
+    background: var(--control); border: 1px solid var(--line-2); border-radius: var(--r-sm);
+  }
+  input[type=text]:focus-visible { border-color: transparent; }
+
+  .note { font-size: 0.82rem; color: var(--muted); line-height: 1.5; text-wrap: pretty; margin-block: 0.35rem; }
   .note b { color: var(--ink); font-weight: 600; }
 
-  .clip-row { display: flex; gap: .5rem; margin: .9rem .15rem .2rem; }
-  .save-row { display: flex; align-items: center; gap: .8rem; margin: .3rem .15rem; }
-  .save-row .saved { font-size: .85rem; color: var(--ok); opacity: 0; transition: opacity .2s; }
-  .save-row .saved.show { opacity: 1; }
+  /* =================== analyzer (spectrum hero) =================== */
+  .analyzer {
+    position: relative;
+    padding: 0.7rem;
+    background: var(--bg);
+    border: 1px solid var(--line-2);
+    border-radius: var(--r-md);
+    margin-bottom: 0.85rem;
+  }
+  /* instrument corner ticks */
+  .analyzer::before, .analyzer::after {
+    content: ""; position: absolute; width: 9px; height: 9px; pointer-events: none;
+    border: 1px solid var(--line-2);
+  }
+  .analyzer::before { top: 5px; left: 5px; border-right: 0; border-bottom: 0; }
+  .analyzer::after { bottom: 5px; right: 5px; border-left: 0; border-top: 0; }
+  .analyzer-head {
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.1rem 0.2rem 0.55rem;
+  }
+  .analyzer-head .live {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    font-family: var(--font-mono); font-size: 0.66rem; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--faint);
+  }
+  .analyzer-head .live .dot { width: 0.4rem; background: var(--signal-dim); }
+  .analyzer[data-live="1"] .live { color: var(--signal); }
+  .analyzer[data-live="1"] .live .dot { background: var(--signal); box-shadow: 0 0 6px var(--signal); animation: pulse 1.4s ease-in-out infinite; }
+  .analyzer-head .src { margin-left: auto; font-family: var(--font-mono); font-size: 0.68rem; color: var(--muted); }
+  #specCanvas { width: 100%; height: clamp(150px, 26vw, 240px); border-radius: var(--r-xs); }
+  .analyzer-foot {
+    display: flex; align-items: center; gap: 0.9rem; padding: 0.5rem 0.2rem 0.1rem;
+    font-family: var(--font-mono); font-size: 0.66rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint);
+  }
+  .analyzer-foot .lr { margin-left: auto; display: inline-flex; gap: 0.8rem; }
+  .analyzer-foot .lr span { display: inline-flex; align-items: center; gap: 0.32rem; }
+  .analyzer-foot .swatch { width: 0.5rem; height: 0.5rem; border-radius: 1px; }
 
-  /* ---- activity log ---- */
-  details.activity { margin-top: 1.2rem; }
-  details.activity summary { font-size: .8rem; color: var(--faint); cursor: pointer; padding: .3rem 0;
-    list-style: none; user-select: none; }
+  /* =================== output selector =================== */
+  .out-switch {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.2rem;
+    padding: 0.25rem; background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--r-md);
+    margin-bottom: 0.85rem;
+  }
+  .out-switch .seg-btn {
+    padding: 0.52rem 0.4rem; border: 0; background: transparent; cursor: pointer; border-radius: var(--r-sm);
+    font-family: var(--font-mono); font-size: 0.78rem; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase;
+    color: var(--muted); transition: color 0.16s, background 0.16s, box-shadow 0.16s;
+  }
+  .out-switch .seg-btn:hover { color: var(--ink); }
+  .out-switch .seg-btn[aria-pressed="true"] {
+    color: var(--signal-ink); background: var(--signal); font-weight: 600;
+  }
+
+  /* =================== tune card =================== */
+  .tune-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: 0.4rem 1rem 1rem; }
+  .vol-group, .eq-group { display: none; }
+  #tuneCard[data-out="spk"] .eq-group[data-out="spk"],
+  #tuneCard[data-out="hp"]  .eq-group[data-out="hp"],
+  #tuneCard[data-out="bt"]  .eq-group[data-out="bt"],
+  #tuneCard[data-out="spk"] .vol-group[data-vol="local"],
+  #tuneCard[data-out="hp"]  .vol-group[data-vol="local"],
+  #tuneCard[data-out="bt"]  .vol-group[data-vol="bt"] { display: block; }
+
+  .eq-group { border-top: 1px solid var(--line); margin-top: 0.8rem; padding-top: 0.35rem; }
+  .eq-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-block: 0.55rem; }
+  .eq-head h3 { font-size: 0.9rem; font-weight: 600; }
+  .eq-head .eq-toggle {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint);
+  }
+  .eq-group:has(.eq-en:not(:checked)) .eq-bands { opacity: 0.4; }
+  .eq-bands { transition: opacity 0.2s; }
+
+  /* =================== device grid (desktop) =================== */
+  @container main (min-width: 34rem) {
+    .hold-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 1.5rem; }
+  }
+
+  /* =================== system tab =================== */
+  .save-row { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; }
+  details.activity { margin-top: 0.6rem; }
+  details.activity summary {
+    font-family: var(--font-mono); font-size: 0.72rem; color: var(--faint); cursor: pointer; padding: 0.3rem 0;
+    list-style: none; user-select: none;
+  }
   details.activity summary::-webkit-details-marker { display: none; }
-  details.activity summary::before { content: "> "; transition: none; }
-  details.activity[open] summary::before { content: "v "; }
-  #log { white-space: pre-wrap; background: oklch(0.13 0.012 285); border: 1px solid var(--border);
-    border-radius: var(--r-sm); padding: .55rem .7rem; margin-top: .4rem; max-height: 9rem; overflow: auto;
-    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11.5px; line-height: 1.6; color: var(--muted); }
+  details.activity summary::before { content: "+ "; }
+  details.activity[open] summary::before { content: "- "; }
+  #log {
+    white-space: pre-wrap; background: oklch(0.13 0.006 200); border: 1px solid var(--line); border-radius: var(--r-sm);
+    padding: 0.55rem 0.7rem; margin-top: 0.4rem; max-height: 9rem; overflow: auto;
+    font-family: var(--font-mono); font-size: 11.5px; line-height: 1.6; color: var(--muted);
+  }
   #log:empty { display: none; }
-  .ok-t { color: var(--ok); } .err-t { color: var(--danger); } .dim-t { color: var(--faint); }
+  .ok-t { color: var(--signal); } .err-t { color: var(--danger); } .dim-t { color: var(--faint); }
 
-  /* ---- device console ---- */
-  #conOut { white-space: pre-wrap; word-break: break-word; background: oklch(0.13 0.012 285);
-    border: 1px solid var(--border); border-radius: var(--r-sm); padding: .55rem .7rem; margin: .2rem .15rem .1rem;
-    height: 13rem; overflow: auto; overscroll-behavior: contain;
-    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11.5px; line-height: 1.6; color: var(--muted); }
-  #conOut:empty::before { content: "waiting for device log\2026"; color: var(--faint); }
-  .hint-btn { font: inherit; font-size: .75rem; padding: .2rem .55rem; color: var(--faint);
-    background: transparent; border: 1px solid var(--border); border-radius: var(--r-sm); flex: 0 0 auto; }
+  #conOut {
+    white-space: pre-wrap; word-break: break-word; background: oklch(0.13 0.006 200);
+    border: 1px solid var(--line); border-radius: var(--r-sm); padding: 0.55rem 0.7rem; margin-bottom: 0.55rem;
+    height: 12rem; overflow: auto; overscroll-behavior: contain;
+    font-family: var(--font-mono); font-size: 11.5px; line-height: 1.6; color: var(--muted);
+  }
+  #conOut:empty::before { content: "waiting for device log"; color: var(--faint); }
+  .clip-row { display: flex; gap: 0.5rem; }
+  .hint-btn {
+    font-family: var(--font-mono); font-size: 0.72rem; padding: 0.2rem 0.55rem; color: var(--faint);
+    background: transparent; border: 1px solid var(--line); border-radius: var(--r-sm); cursor: pointer; flex: 0 0 auto;
+  }
   .hint-btn:hover { color: var(--ink); background: var(--surface); border-color: var(--faint); }
 
-  /* ---- spectrum ---- */
-  #specCanvas { width: 100%; height: 140px; display: block; margin-top: .3rem;
-    background: oklch(0.13 0.012 285); border: 1px solid var(--border); border-radius: var(--r-sm); }
-
-  /* a global error banner for the big stuff (no Bluetooth, etc.) */
-  #banner { display: none; margin: .6rem 0 0; padding: .7rem .9rem; border-radius: var(--r-sm);
-    font-size: .88rem; background: oklch(0.32 0.10 22 / .25); border: 1px solid var(--danger); color: oklch(0.88 0.06 22); }
-  #banner.show { display: block; }
-
-  /* ---- firmware update (OTA) ---- */
-  .drop { display: grid; place-items: center; text-align: center; gap: .25rem;
-    padding: 1.15rem 1rem; margin: .3rem .15rem;
-    border: 1.5px dashed var(--border-bright); border-radius: var(--r-md);
-    color: var(--muted); font-size: .88rem; cursor: pointer;
-    transition: border-color .15s, background .15s, color .15s; }
+  .drop {
+    display: grid; place-items: center; text-align: center; gap: 0.25rem;
+    padding: 1.15rem 1rem; margin-bottom: 0.55rem;
+    border: 1.5px dashed var(--line-2); border-radius: var(--r-md);
+    color: var(--muted); font-size: 0.88rem; cursor: pointer;
+    transition: border-color 0.15s, background 0.15s, color 0.15s;
+  }
   .drop:hover { border-color: var(--faint); color: var(--ink); }
-  .drop.over { border-color: var(--accent-bright); color: var(--ink);
-    background: oklch(0.30 0.06 286 / .3); }
+  .drop.over { border-color: var(--signal); color: var(--ink); background: var(--signal-soft); }
   .drop b { color: var(--ink); font-weight: 600; }
   .drop input { display: none; }
-  .bar { height: .55rem; border-radius: 999px; background: var(--control);
-    border: 1px solid var(--border); overflow: hidden; margin: .7rem .15rem .45rem; }
-  /* fill scales via transform (GPU-composited, no layout thrash); it updates on
-     every OTA ack, so a width animation would be janky. Clipped by .bar's rounded
-     overflow, so scaleX needs no radius of its own. */
-  .bar > i { display: block; height: 100%; width: 100%; transform: scaleX(0);
-    transform-origin: left center;
-    background: linear-gradient(90deg, var(--accent), var(--accent-bright));
-    transition: transform .2s var(--ease); }
-  .fw-status { display: flex; justify-content: space-between; gap: 1rem;
-    font-size: .82rem; color: var(--muted); margin: 0 .15rem; min-height: 1.2em; }
-  .fw-status .rate { font-variant-numeric: tabular-nums; color: var(--faint); flex: 0 0 auto; }
+  .bar { height: 0.5rem; border-radius: var(--r-pill); background: var(--control); border: 1px solid var(--line); overflow: hidden; margin: 0.55rem 0 0.45rem; }
+  .bar > i { display: block; height: 100%; width: 100%; transform: scaleX(0); transform-origin: left center; background: var(--signal); transition: transform 0.2s var(--ease); }
+  .fw-status { display: flex; justify-content: space-between; gap: 1rem; font-family: var(--font-mono); font-size: 0.76rem; color: var(--muted); min-height: 1.2em; }
+  .fw-status .rate { color: var(--faint); flex: 0 0 auto; }
 
-  @media (max-width: 380px) {
-    .title p { display: none; }
-    .pill .label { display: none; }
+  .mode-chip { display: inline-flex; align-items: center; gap: 0.5rem; font-family: var(--font-mono); font-weight: 500; font-size: 0.78rem; letter-spacing: 0.02em; }
+  .mode-chip .dot { width: 0.5rem; }
+  .mode-chip[data-mode="A"] { color: var(--warn); }
+  .mode-chip[data-mode="A"] .dot { background: var(--warn); }
+  .mode-chip[data-mode="B"] { color: var(--signal); }
+  .mode-chip[data-mode="B"] .dot { background: var(--signal); }
+
+  #banner {
+    display: none; margin: 0.8rem 0 0; padding: 0.7rem 0.9rem; border-radius: var(--r-sm);
+    font-size: 0.88rem; background: oklch(0.32 0.10 25 / 0.22); border: 1px solid var(--danger); color: oklch(0.86 0.06 25);
   }
+  #banner.show { display: block; }
+
+  /* section spacing */
+  .tab-panel.stack > * + * { margin-top: 0.8rem; }
+}
+
+/* ============================ motion ============================ */
+@layer motion {
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+  @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  .panel-in > * { animation: rise 0.42s var(--ease) backwards; }
+  .panel-in > *:nth-child(2) { animation-delay: 0.05s; }
+  .panel-in > *:nth-child(3) { animation-delay: 0.1s; }
+  ::view-transition-old(root), ::view-transition-new(root) { animation-duration: 0.2s; }
   @media (prefers-reduced-motion: reduce) {
-    *, *::after { animation: none !important; transition: none !important; }
+    *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+    ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
   }
+}
 </style>
 </head>
 <body>
-<div class="wrap">
+<div class="app">
 
-  <header>
-    <div class="mark" aria-hidden="true">BT</div>
-    <div class="title">
-      <h1>GameBoy HiFi</h1>
-      <p>Bluetooth sound control</p>
+  <aside class="rail">
+    <div class="rail-top">
+      <div class="brand">
+        <div class="mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="var(--signal)" stroke-width="2.4" stroke-linecap="round">
+            <path d="M5 15v-3M10 17V7M14.5 14V10M19 16v-8"/>
+          </svg>
+        </div>
+        <div class="wm">
+          <span class="name">GameBoy&#8202;<b>HiFi</b></span>
+          <span class="sub">Audio mod</span>
+        </div>
+      </div>
+
+      <span class="pill" id="status" data-state="disconnected" role="status" aria-live="polite">
+        <span class="dot"></span><span class="label">Not connected</span>
+      </span>
+
+      <nav class="nav" id="tabs" role="tablist" aria-label="Sections" hidden>
+        <button class="tab" role="tab" data-tab="tune"   aria-selected="true">Tune</button>
+        <button class="tab" role="tab" data-tab="device" aria-selected="false">Device</button>
+        <button class="tab" role="tab" data-tab="system" aria-selected="false">System</button>
+      </nav>
     </div>
-    <span class="pill" id="status" data-state="disconnected" role="status" aria-live="polite">
-      <span class="dot"></span><span class="label">Not connected</span>
-    </span>
-  </header>
 
-  <div id="banner"></div>
-
-  <!-- Disconnected: connect screen -->
-  <div id="connectView">
-    <div class="connect-card">
-      <div class="glyph" aria-hidden="true">
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M7 7l10 10M17 7L7 17"/><path d="M12 2v6M12 16v6"/><circle cx="12" cy="12" r="2.2"/>
-        </svg>
-      </div>
-      <h2>Connect your audio mod</h2>
-      <p>Pair over Bluetooth to adjust volume, tone, and sound effects. Your settings can be saved to the
-        device so they stick after a power cycle.</p>
-      <button id="connect" class="btn-primary btn-lg">Connect over Bluetooth</button>
-      <div class="req">
-        Use <b>Chrome</b> or <b>Edge</b> on desktop or Android.<br>
-        Turn on the mod first, then pick <b>GameBoy HiFi Setup</b> when prompted.
+    <div class="rail-foot" id="railFoot" hidden>
+      <div class="inner-foot">
+        <span class="mode-chip" id="modeStatusPill" data-mode="B"><span class="dot"></span><span id="modeStatus">—</span></span>
+        <div class="foot-actions">
+          <span class="saved" id="savedMsg">Saved ✓</span>
+          <button id="disconnect" class="btn btn-ghost">Disconnect</button>
+          <button id="save" class="btn btn-primary">Save to device</button>
+        </div>
       </div>
     </div>
-  </div>
+  </aside>
 
-  <!-- Connected: control panel -->
-  <fieldset id="panel" hidden>
+  <main class="main">
+    <div class="main-inner">
+      <div id="banner"></div>
 
-    <section class="group">
-      <div class="group-head"><h2>Volume</h2></div>
-      <div class="ctl">
-        <div class="ctl-head"><label for="spkVol">Speaker</label><output id="spkVolO"></output></div>
-        <input type="range" id="spkVol" min="0" max="100">
+      <!-- ============ Disconnected ============ -->
+      <div id="connectView">
+        <div class="connect">
+          <div class="glyph" aria-hidden="true">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M7 7l10 10M17 7L7 17"/><path d="M12 2v6M12 16v6"/><circle cx="12" cy="12" r="2.2"/>
+            </svg>
+          </div>
+          <h2>Connect your audio mod</h2>
+          <p>Pair over Bluetooth to watch the live spectrum and dial in the sound for whatever you're
+            listening on. Settings save to the device so they stick after a power cycle.</p>
+          <button id="connect" class="btn btn-primary btn-lg">Connect over Bluetooth</button>
+          <div class="req">
+            Use <b>Chrome</b> or <b>Edge</b> on desktop or Android. Turn on the mod first, then pick
+            <b>GameBoy HiFi Setup</b> when prompted.<br>
+            On <b>iPhone</b>, Safari can't do Web Bluetooth &mdash; use a Web BLE browser like
+            <a href="https://apps.apple.com/us/app/bluefy-web-ble-browser/id1492822055" target="_blank" rel="noopener noreferrer">Bluefy</a>
+            or <a href="https://apps.apple.com/us/app/ble-link-web-ble-browser/id6468414672" target="_blank" rel="noopener noreferrer">BLE-Link</a>.
+          </div>
+        </div>
       </div>
-      <div class="ctl">
-        <div class="ctl-head"><label for="btVol">Bluetooth</label><output id="btVolO"></output></div>
-        <input type="range" id="btVol" min="0" max="100">
-      </div>
-    </section>
 
-    <section class="group">
-      <div class="group-head"><h2>Speaker tone</h2><span class="hint">EQ</span><input type="checkbox" class="sw" id="eqEn" aria-label="Enable speaker EQ"></div>
-      <div class="ctl">
-        <div class="ctl-head"><label for="eqBass">Bass</label><output id="eqBassO"></output></div>
-        <input type="range" id="eqBass" min="-12" max="12">
-      </div>
-      <div class="ctl">
-        <div class="ctl-head"><label for="eqMid">Mid</label><output id="eqMidO"></output></div>
-        <input type="range" id="eqMid" min="-12" max="12">
-      </div>
-      <div class="ctl">
-        <div class="ctl-head"><label for="eqTreble">Treble</label><output id="eqTrebleO"></output></div>
-        <input type="range" id="eqTreble" min="-12" max="12">
-      </div>
-    </section>
+      <!-- ============ Connected ============ -->
+      <fieldset id="panel" hidden style="border:0;padding:0;margin:0;min-width:0">
 
-    <section class="group">
-      <div class="group-head"><h2>Headphone tone</h2><span class="hint">wired</span><input type="checkbox" class="sw" id="eqHpEn" aria-label="Enable headphone EQ"></div>
-      <p class="note">Applies only while wired headphones are plugged in. Off and flat by default;
-        turn it on to dial in your headphones.</p>
-      <div class="ctl">
-        <div class="ctl-head"><label for="eqHpBass">Bass</label><output id="eqHpBassO"></output></div>
-        <input type="range" id="eqHpBass" min="-12" max="12">
-      </div>
-      <div class="ctl">
-        <div class="ctl-head"><label for="eqHpMid">Mid</label><output id="eqHpMidO"></output></div>
-        <input type="range" id="eqHpMid" min="-12" max="12">
-      </div>
-      <div class="ctl">
-        <div class="ctl-head"><label for="eqHpTreble">Treble</label><output id="eqHpTrebleO"></output></div>
-        <input type="range" id="eqHpTreble" min="-12" max="12">
-      </div>
-    </section>
+        <!-- ---------- TUNE ---------- -->
+        <section class="tab-panel" data-tab="tune" role="tabpanel">
 
-    <section class="group">
-      <div class="group-head"><h2>Bluetooth tone</h2><span class="hint">EQ</span><input type="checkbox" class="sw" id="eqBtEn" aria-label="Enable Bluetooth EQ"></div>
-      <div class="ctl">
-        <div class="ctl-head"><label for="eqBtBass">Bass</label><output id="eqBtBassO"></output></div>
-        <input type="range" id="eqBtBass" min="-12" max="12">
-      </div>
-      <div class="ctl">
-        <div class="ctl-head"><label for="eqBtMid">Mid</label><output id="eqBtMidO"></output></div>
-        <input type="range" id="eqBtMid" min="-12" max="12">
-      </div>
-      <div class="ctl">
-        <div class="ctl-head"><label for="eqBtTreble">Treble</label><output id="eqBtTrebleO"></output></div>
-        <input type="range" id="eqBtTreble" min="-12" max="12">
-      </div>
-    </section>
+          <div class="analyzer" id="spectrum" data-live="0" hidden>
+            <div class="analyzer-head">
+              <span class="live"><span class="dot"></span>Analyzer</span>
+              <span class="src" id="specHint">live output</span>
+            </div>
+            <canvas id="specCanvas" aria-hidden="true"></canvas>
+            <div class="analyzer-foot">
+              <span>Stereo · L up / R down</span>
+              <span class="lr">
+                <span><span class="swatch" style="background:var(--signal)"></span>L</span>
+                <span><span class="swatch" style="background:var(--violet-2)"></span>R</span>
+              </span>
+            </div>
+          </div>
 
-    <section class="group">
-      <div class="group-head"><h2>Sound cues</h2><input type="checkbox" class="sw" id="sfxEn" aria-label="Enable sound cues"></div>
-      <div class="ctl">
-        <div class="ctl-head"><label for="sfxLevel">Cue volume</label><output id="sfxLevelO"></output></div>
-        <input type="range" id="sfxLevel" min="-24" max="6">
-      </div>
-    </section>
+          <div class="out-switch" role="group" aria-label="Which output to tune">
+            <button type="button" class="seg-btn" data-out="spk" aria-pressed="true">Speaker</button>
+            <button type="button" class="seg-btn" data-out="hp"  aria-pressed="false">Headphones</button>
+            <button type="button" class="seg-btn" data-out="bt"  aria-pressed="false">Bluetooth</button>
+          </div>
 
-    <section class="group">
-      <div class="group-head"><h2>Mode</h2></div>
-      <div class="ctl-row">
-        <label>Current mode</label>
-        <span class="mode-status" id="modeStatusPill" data-mode="B"><span class="dot"></span><span id="modeStatus">-</span></span>
-      </div>
-      <p class="note">Switch between <b>Full mode</b> (all the sound processing) and <b>Battery saver</b>
-        (low power, longer playtime) by holding the <b>R button</b> on the console until the third chime,
-        then releasing. This page can't switch it, because battery saver puts the radio to sleep.</p>
-      <div class="ctl-row" style="margin-top:1rem">
-        <label>Switch to Full mode when headphones are unplugged
-          <span class="sub">Otherwise the speaker stays in battery saver</span></label>
-        <input type="checkbox" class="sw" id="unplugToB" aria-label="Switch to Full mode on unplug">
-      </div>
-    </section>
+          <div class="tune-card" id="tuneCard" data-out="spk">
+            <div class="ctl vol-group" data-vol="local">
+              <div class="ctl-head"><label for="spkVol">Volume</label><output id="spkVolO"></output></div>
+              <input type="range" id="spkVol" min="0" max="100">
+            </div>
+            <div class="ctl vol-group" data-vol="bt">
+              <div class="ctl-head"><label for="btVol">Volume</label><output id="btVolO"></output></div>
+              <input type="range" id="btVol" min="0" max="100">
+            </div>
 
-    <section class="group">
-      <div class="group-head"><h2>R-button hold menu</h2><span class="hint">milliseconds</span></div>
-      <p class="note">Hold the console's <b>R button</b>; it chimes as the hold passes each step. Release on the
-        chime you want. Raise these if R gets bumped during play.</p>
-      <div class="ctl-row"><label for="holdConnect">Reconnect</label><input type="number" id="holdConnect" min="500" max="15000" step="100"></div>
-      <div class="ctl-row"><label for="holdPair">Pair new device</label><input type="number" id="holdPair" min="500" max="15000" step="100"></div>
-      <div class="ctl-row"><label for="holdMode">Switch mode</label><input type="number" id="holdMode" min="500" max="15000" step="100"></div>
-      <div class="ctl-row"><label for="holdExit">Leave battery saver</label><input type="number" id="holdExit" min="500" max="15000" step="100"></div>
-    </section>
+            <div class="eq-group" data-out="spk">
+              <div class="eq-head"><h3>Speaker EQ</h3>
+                <span class="eq-toggle">On<input type="checkbox" class="sw eq-en" id="eqEn" aria-label="Enable speaker EQ"></span>
+              </div>
+              <div class="eq-bands">
+                <div class="ctl"><div class="ctl-head"><label for="eqBass">Bass</label><output id="eqBassO"></output></div><input type="range" id="eqBass" min="-12" max="12"></div>
+                <div class="ctl"><div class="ctl-head"><label for="eqMid">Mid</label><output id="eqMidO"></output></div><input type="range" id="eqMid" min="-12" max="12"></div>
+                <div class="ctl"><div class="ctl-head"><label for="eqTreble">Treble</label><output id="eqTrebleO"></output></div><input type="range" id="eqTreble" min="-12" max="12"></div>
+              </div>
+            </div>
 
-    <section class="group">
-      <div class="group-head"><h2>Save</h2></div>
-      <div class="save-row">
-        <button id="save" class="btn-primary">Save to device</button>
-        <button id="disconnect" class="btn-ghost">Disconnect</button>
-        <span class="saved" id="savedMsg">Saved</span>
-      </div>
-    </section>
+            <div class="eq-group" data-out="hp">
+              <div class="eq-head"><h3>Headphone EQ</h3>
+                <span class="eq-toggle">On<input type="checkbox" class="sw eq-en" id="eqHpEn" aria-label="Enable headphone EQ"></span>
+              </div>
+              <div class="eq-bands">
+                <div class="ctl"><div class="ctl-head"><label for="eqHpBass">Bass</label><output id="eqHpBassO"></output></div><input type="range" id="eqHpBass" min="-12" max="12"></div>
+                <div class="ctl"><div class="ctl-head"><label for="eqHpMid">Mid</label><output id="eqHpMidO"></output></div><input type="range" id="eqHpMid" min="-12" max="12"></div>
+                <div class="ctl"><div class="ctl-head"><label for="eqHpTreble">Treble</label><output id="eqHpTrebleO"></output></div><input type="range" id="eqHpTreble" min="-12" max="12"></div>
+              </div>
+            </div>
 
-    <section class="group">
-      <div class="group-head"><h2>Firmware update</h2><span class="hint" id="fwRunning">-</span></div>
-      <p class="note" id="fwInstalled">Installed firmware: -</p>
-      <p class="note">Update the mod over Bluetooth. Get the latest <b>firmware.bin</b>, drop it below, and
-        keep this page open until the device reboots. <b>Audio pauses</b> during the update (~1-2 min).</p>
-      <label class="drop" id="fwDrop">
-        <input type="file" id="fwFile" accept=".bin,application/octet-stream">
-        <span id="fwHint">Tap to choose a <b>.bin</b> file, or drop it here</span>
-      </label>
-      <div class="bar" id="fwBarWrap" hidden><i id="fwBar"></i></div>
-      <div class="fw-status"><span id="fwStatus"></span><span class="rate" id="fwRate"></span></div>
-      <div class="save-row" style="margin-top:1rem">
-        <button id="fwFlash" class="btn-primary" disabled>Flash firmware</button>
-        <button id="fwAbort" class="btn-ghost" disabled>Cancel</button>
-      </div>
-    </section>
+            <div class="eq-group" data-out="bt">
+              <div class="eq-head"><h3>Bluetooth EQ</h3>
+                <span class="eq-toggle">On<input type="checkbox" class="sw eq-en" id="eqBtEn" aria-label="Enable Bluetooth EQ"></span>
+              </div>
+              <div class="eq-bands">
+                <div class="ctl"><div class="ctl-head"><label for="eqBtBass">Bass</label><output id="eqBtBassO"></output></div><input type="range" id="eqBtBass" min="-12" max="12"></div>
+                <div class="ctl"><div class="ctl-head"><label for="eqBtMid">Mid</label><output id="eqBtMidO"></output></div><input type="range" id="eqBtMid" min="-12" max="12"></div>
+                <div class="ctl"><div class="ctl-head"><label for="eqBtTreble">Treble</label><output id="eqBtTrebleO"></output></div><input type="range" id="eqBtTreble" min="-12" max="12"></div>
+              </div>
+            </div>
+          </div>
+        </section>
 
-    <section class="group" id="spectrum" hidden>
-      <div class="group-head"><h2>Spectrum</h2><span class="hint" id="specHint">live output &middot; L up / R down</span></div>
-      <canvas id="specCanvas"></canvas>
-    </section>
+        <!-- ---------- DEVICE ---------- -->
+        <section class="tab-panel stack" data-tab="device" role="tabpanel" hidden>
+          <div class="card">
+            <div class="card-head"><h2>Mode</h2></div>
+            <p class="note">The mod runs in <b>Full mode</b> (all the sound processing) or <b>Battery saver</b>
+              (low power, longer playtime). Switch by holding the <b>R button</b> on the console until the third
+              chime, then releasing.</p>
+            <div class="row" style="margin-top:0.9rem">
+              <label>Switch to Full mode when headphones are unplugged
+                <span class="sub">Otherwise the speaker stays in battery saver</span></label>
+              <input type="checkbox" class="sw" id="unplugToB" aria-label="Switch to Full mode on unplug">
+            </div>
+          </div>
 
-    <section class="group" id="console" hidden>
-      <div class="group-head"><h2>Device console</h2><button type="button" id="conClear" class="hint-btn">clear</button></div>
-      <p class="note">The device's live log, plus the same commands as the wired console
-        (<code>help</code>, <code>get</code>, <code>batt</code>, <code>nr</code>, ...). Replies stream back below.</p>
-      <div id="conOut" aria-live="polite"></div>
-      <div class="clip-row">
-        <input type="text" id="conInput" placeholder="type a command, e.g. get" autocomplete="off" spellcheck="false" enterkeyhint="send">
-        <button id="conSend" class="btn-primary">Send</button>
-      </div>
-    </section>
+          <div class="card">
+            <div class="card-head"><h2>Sound cues</h2><input type="checkbox" class="sw" id="sfxEn" aria-label="Enable sound cues"></div>
+            <div class="ctl">
+              <div class="ctl-head"><label for="sfxLevel">Cue volume</label><output id="sfxLevelO"></output></div>
+              <input type="range" id="sfxLevel" min="-24" max="6">
+            </div>
+          </div>
 
-    <details class="activity">
-      <summary>Activity log</summary>
-      <div id="log"></div>
-    </details>
+          <div class="card">
+            <div class="card-head"><h2>R-button hold menu</h2><span class="hint">milliseconds</span></div>
+            <p class="note" style="margin-bottom:0.7rem">Hold the console's <b>R button</b>; it chimes as the hold passes each step.
+              Release on the chime you want. Raise these if R gets bumped during play.</p>
+            <div class="hold-grid">
+              <div class="row"><label for="holdConnect">Reconnect</label><input type="number" id="holdConnect" min="500" max="15000" step="100"></div>
+              <div class="row"><label for="holdPair">Pair new device</label><input type="number" id="holdPair" min="500" max="15000" step="100"></div>
+              <div class="row"><label for="holdMode">Switch mode</label><input type="number" id="holdMode" min="500" max="15000" step="100"></div>
+              <div class="row"><label for="holdExit">Leave battery saver</label><input type="number" id="holdExit" min="500" max="15000" step="100"></div>
+            </div>
+          </div>
+        </section>
 
-  </fieldset>
+        <!-- ---------- SYSTEM ---------- -->
+        <section class="tab-panel stack" data-tab="system" role="tabpanel" hidden>
+          <div class="card">
+            <div class="card-head"><h2>Firmware update</h2><span class="hint" id="fwRunning">—</span></div>
+            <p class="note" id="fwInstalled">Installed firmware: —</p>
+            <p class="note" style="margin-bottom:0.7rem">Update the mod over Bluetooth. Get the latest <b>firmware.bin</b>, drop it below,
+              and keep this page open until the device reboots. <b>Audio pauses</b> for a minute or two.</p>
+            <label class="drop" id="fwDrop">
+              <input type="file" id="fwFile" accept=".bin,application/octet-stream">
+              <span id="fwHint">Tap to choose a <b>.bin</b> file, or drop it here</span>
+            </label>
+            <div class="bar" id="fwBarWrap" hidden><i id="fwBar"></i></div>
+            <div class="fw-status"><span id="fwStatus"></span><span class="rate" id="fwRate"></span></div>
+            <div class="save-row" style="margin-top:0.9rem">
+              <button id="fwFlash" class="btn btn-primary" disabled>Flash firmware</button>
+              <button id="fwAbort" class="btn btn-ghost" disabled>Cancel</button>
+            </div>
+          </div>
+
+          <div class="card" id="console" hidden>
+            <div class="card-head"><h2>Device console</h2><button type="button" id="conClear" class="hint-btn">clear</button></div>
+            <p class="note" style="margin-bottom:0.6rem">The device's live log, plus the same commands as the wired console
+              (<code>help</code>, <code>get</code>, <code>batt</code>, <code>nr</code>, …).</p>
+            <div id="conOut" aria-live="polite"></div>
+            <div class="clip-row">
+              <input type="text" id="conInput" placeholder="type a command, e.g. get" autocomplete="off" spellcheck="false" enterkeyhint="send">
+              <button id="conSend" class="btn btn-primary">Send</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><h2>Diagnostics</h2></div>
+            <details class="activity"><summary>Activity log</summary><div id="log"></div></details>
+          </div>
+        </section>
+
+      </fieldset>
+    </div>
+  </main>
 </div>
 
-<script>
+<script type="module">
 const SVC      = '5a4d0000-1f2e-4c6b-9a8f-0102030405aa';
 const SETTINGS = '5a4d0001-1f2e-4c6b-9a8f-0102030405aa';
 const ACTION   = '5a4d0002-1f2e-4c6b-9a8f-0102030405aa';
@@ -482,11 +780,14 @@ const OTA = { BEGIN:0x01, END:0x02, ABORT:0x03, GET_INFO:0x04,
 
 let device, settingsChr, actionChr, otaCtlChr, otaDataChr, logChr, cmdChr, specChr;
 let conDec = new TextDecoder();   // streaming UTF-8 decoder for the device log
-let specL = null, specR = null, specSmL = null, specSmR = null, specRAF = 0, specSrc = -1;  // spectrum state
-let otaImage = null;   // ArrayBuffer of the chosen .bin
-let ota = null;        // active transfer state
+let specL = null, specR = null, specSmL = null, specSmR = null, specPkL = null, specPkR = null, specRAF = 0, specSrc = -1;
+let specLastFrame = 0;    // timestamp of the last spectrum frame (drives the LIVE indicator)
+let otaImage = null;      // ArrayBuffer of the chosen .bin
+let ota = null;           // active transfer state
 let suppress = false;     // ignore control 'input' events while populating from the device
 let lastModeA = 0;        // read-only mode_a byte, preserved on write-back (firmware ignores it)
+let activeOutput = 'spk'; // which path the Tune tab is editing: 'spk' | 'hp' | 'bt'
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 const $ = (id) => document.getElementById(id);
 const logEl = $('log');
@@ -574,17 +875,33 @@ for (const [id] of FIELDS) $(id).addEventListener('input', onControlInput);
 for (const [id] of HOLD_FIELDS) $(id).addEventListener('input', onControlInput);
 
 // ---- actions ----
+// Action opcodes (byte 0 of the write), mirroring do_action() in ble_config.c.
+const ACT = { SAVE: 0x01, CHIME: 0x02, PLAY: 0x03 };
+const SFX_CONNECT = 1;   // SFX_SYNTH_CONNECT: a short rising triad, used to preview cue volume
 async function sendAction(bytes) {
   if (!actionChr) return;
   try { await actionChr.writeValue(new Uint8Array(bytes)); }
   catch (e) { log('action failed: ' + e, 'err-t'); }
 }
 $('save').onclick = () => {
-  sendAction([0x01]);
+  sendAction([ACT.SAVE]);
   const s = $('savedMsg'); s.classList.add('show');
   setTimeout(() => s.classList.remove('show'), 1600);
   log('saved to device', 'ok-t');
 };
+
+// Preview the cue at the new level whenever Cue volume changes, so the user
+// hears the effect. Debounced so a slider drag fires one chime at the settled
+// value, and only after the new level has been pushed to the device.
+let cueTimer;
+$('sfxLevel').addEventListener('input', () => {
+  clearTimeout(cueTimer);
+  cueTimer = setTimeout(async () => {
+    clearTimeout(wTimer);
+    await writeSettings();                    // land the new sfx_level first
+    sendAction([ACT.CHIME, SFX_CONNECT]);     // then chime so it plays at that level
+  }, 260);
+});
 
 // ---- firmware update (OTA) ----
 // Pushes a .bin over the OTACTL/OTADATA characteristics. The device quiesces its
@@ -610,7 +927,7 @@ function onFwFile(file) {
   r.onload = () => {
     otaImage = r.result;
     const size = otaImage.byteLength, crc = crc32(otaImage);
-    $('fwHint').innerHTML = `<b>${file.name}</b> - ${(size / 1024).toFixed(0)} KB`;
+    $('fwHint').innerHTML = `<b>${file.name}</b> &middot; ${(size / 1024).toFixed(0)} KB`;
     $('fwFlash').disabled = false;
     $('fwStatus').textContent = 'Ready to flash.';
     log(`loaded ${file.name}: ${size} bytes, crc32 0x${crc.toString(16).padStart(8, '0')}`, 'dim-t');
@@ -645,7 +962,7 @@ function fwProgress() {
   const pct = Math.floor(ota.acked / ota.size * 100);
   $('fwBar').style.transform = `scaleX(${ota.acked / ota.size})`;
   const dt = (performance.now() - ota.t0) / 1000;
-  $('fwStatus').textContent = `Flashing... ${pct}%`;
+  $('fwStatus').textContent = `Flashing ${pct}%`;
   $('fwRate').textContent = dt > 0 ? `${(ota.acked / dt / 1024).toFixed(1)} KiB/s` : '';
 }
 const waitAck = () => new Promise((res) => ota.waiters.push(res));
@@ -656,8 +973,8 @@ function onOtaStatus(dv) {
     const [ver, slot, date] = new TextDecoder().decode(dvBytes(dv).slice(1)).split('|');
     $('fwRunning').textContent = ver ? `v${ver}` : '';
     $('fwInstalled').innerHTML = ver
-      ? `Installed firmware: <b>v${ver}</b>${slot ? ' - ' + slot : ''}${date ? ' - built ' + date : ''}`
-      : 'Installed firmware: -';
+      ? `Installed firmware: <b>v${ver}</b>${slot ? ' &middot; ' + slot : ''}${date ? ' &middot; built ' + date : ''}`
+      : 'Installed firmware: not reported';
     return;
   }
   if (!ota) return;
@@ -693,7 +1010,7 @@ async function startOta() {
   $('fwBarWrap').hidden = false;
   $('fwBar').style.transform = 'scaleX(0)';
   $('fwRate').textContent = '';
-  $('fwStatus').textContent = 'Preparing... (device pauses audio and erases flash)';
+  $('fwStatus').textContent = 'Preparing (device pauses audio and erases flash)';
   log(`OTA begin: ${size} bytes, crc32 0x${crc.toString(16).padStart(8, '0')}`, 'dim-t');
   const begin = new Uint8Array(9);
   begin[0] = OTA.BEGIN; begin.set(u32le(size), 1); begin.set(u32le(crc), 5);
@@ -718,12 +1035,12 @@ async function pumpOta() {
     }
     if (ota.error) return;
     while (ota.acked < ota.size && !ota.error) await waitAck();   // drain remaining acks
-    log('all data sent; finalizing...', 'dim-t');
+    log('all data sent; finalizing', 'dim-t');
     $('fwBar').style.transform = 'scaleX(1)';
     // The device verifies, swaps the boot slot, and reboots, usually dropping
     // the link before the DONE notify lands, so set the final message here
     // rather than relying on onOtaStatus(DONE).
-    $('fwStatus').textContent = 'Verifying and rebooting into the new firmware... reconnect in a moment.';
+    $('fwStatus').textContent = 'Verifying and rebooting into the new firmware. Reconnect in a moment.';
     $('fwRate').textContent = '';
     ota.ended = true;
     setOtaActive(false);
@@ -788,40 +1105,98 @@ $('conInput').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') { e.preventDefault(); conSend(); }
 });
 
-// ---- spectrum visualizer (SPECTRUM notify) ----
+// ---- spectrum analyzer (SPECTRUM notify) ----
 // 64-byte frames: 32 left magnitude bytes then 32 right (0..255). Drawn as a
-// center-line stereo meter (L grows up, R grows down) with fast-attack/slow-decay
-// smoothing. Rough + cheap on purpose; a full design pass comes later.
+// center-line stereo meter (L lime up, R violet down) with fast-attack/slow-decay
+// smoothing, gradient bars, slow-decay peak caps, and faint dB gridlines.
+const C_LU = 'oklch(0.865 0.19 129)',  C_LD = 'oklch(0.58 0.16 132)';   // L up: bright -> dim
+const C_RU = 'oklch(0.50 0.16 292)',   C_RD = 'oklch(0.68 0.19 292)';   // R down: dim -> bright
+const C_LP = 'oklch(0.94 0.13 129)',   C_RP = 'oklch(0.80 0.16 292)';   // peak caps
+const C_GRID = 'oklch(1 0 0 / 0.045)', C_MID = 'oklch(1 0 0 / 0.11)';
 function startSpec() {
   const cv = $('specCanvas'), ctx = cv.getContext('2d');
   const draw = () => {
     if (!specChr) { specRAF = 0; return; }   // stopped on disconnect
+    const dpr = Math.min(devicePixelRatio || 1, 2);
     const w = cv.clientWidth, h = cv.clientHeight;
-    if (cv.width !== w) cv.width = w;
-    if (cv.height !== h) cv.height = h;
+    if (!w || !h) { specRAF = requestAnimationFrame(draw); return; }  // hidden tab
+    const W = Math.round(w * dpr), H = Math.round(h * dpr);
+    if (cv.width !== W) cv.width = W;
+    if (cv.height !== H) cv.height = H;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
+    const mid = h / 2;
+
+    // faint dB gridlines
+    ctx.fillStyle = C_GRID;
+    for (const f of [0.5, 0.75]) {
+      ctx.fillRect(0, mid - mid * f, w, 1);
+      ctx.fillRect(0, mid + mid * f, w, 1);
+    }
+
     if (specL && specR) {
       const n = specL.length;
-      if (!specSmL || specSmL.length !== n) { specSmL = new Float32Array(n); specSmR = new Float32Array(n); }
-      const gap = 2, bw = (w - gap * (n - 1)) / n, mid = h / 2;
+      if (!specSmL || specSmL.length !== n) {
+        specSmL = new Float32Array(n); specSmR = new Float32Array(n);
+        specPkL = new Float32Array(n); specPkR = new Float32Array(n);
+      }
+      const gap = Math.max(1.5, w * 0.006), bw = (w - gap * (n - 1)) / n, r = Math.min(bw / 2, 2.5);
+      const gUp = ctx.createLinearGradient(0, 0, 0, mid);
+      gUp.addColorStop(0, C_LU); gUp.addColorStop(1, C_LD);
+      const gDn = ctx.createLinearGradient(0, mid, 0, h);
+      gDn.addColorStop(0, C_RU); gDn.addColorStop(1, C_RD);
+
       for (let i = 0; i < n; i++) {
         const tl = specL[i] / 255, tr = specR[i] / 255;
         specSmL[i] += (tl - specSmL[i]) * (tl > specSmL[i] ? 0.6 : 0.18);
         specSmR[i] += (tr - specSmR[i]) * (tr > specSmR[i] ? 0.6 : 0.18);
+        specPkL[i] = Math.max(specSmL[i], specPkL[i] - 0.012);
+        specPkR[i] = Math.max(specSmR[i], specPkR[i] - 0.012);
         const x = i * (bw + gap);
-        const hl = specSmL[i] * (mid - 1), hr = specSmR[i] * (mid - 1);
-        ctx.fillStyle = '#9a7cf0';
-        ctx.fillRect(x, mid - hl, bw, hl);       // left: up from center
-        ctx.fillStyle = '#6f5ec0';
-        ctx.fillRect(x, mid, bw, hr);            // right: down from center
+        const hl = specSmL[i] * (mid - 2), hr = specSmR[i] * (mid - 2);
+        ctx.fillStyle = gUp;
+        if (hl > 0.5) { ctx.beginPath(); ctx.roundRect(x, mid - hl, bw, hl, [r, r, 0, 0]); ctx.fill(); }
+        ctx.fillStyle = gDn;
+        if (hr > 0.5) { ctx.beginPath(); ctx.roundRect(x, mid, bw, hr, [0, 0, r, r]); ctx.fill(); }
+        const pl = specPkL[i] * (mid - 2), pr = specPkR[i] * (mid - 2);
+        ctx.fillStyle = C_LP; if (pl > 1) ctx.fillRect(x, mid - pl - 1.5, bw, 1.5);
+        ctx.fillStyle = C_RP; if (pr > 1) ctx.fillRect(x, mid + pr, bw, 1.5);
       }
-      ctx.fillStyle = 'rgba(255,255,255,0.12)';
-      ctx.fillRect(0, Math.floor(mid), w, 1);    // center line
     }
+    ctx.fillStyle = C_MID;
+    ctx.fillRect(0, Math.floor(mid), w, 1);   // 0 dB center line
+
+    // LIVE indicator: lit while frames are arriving
+    $('spectrum').dataset.live = (performance.now() - specLastFrame < 400) ? '1' : '0';
     specRAF = requestAnimationFrame(draw);
   };
   if (!specRAF) specRAF = requestAnimationFrame(draw);
 }
+
+// ---- output selector (which path the Tune tab edits) ----
+// Spectrum source byte -> label + which output the Tune tab follows.
+const SRC_LABEL = { 0: 'Speaker', 1: 'Bluetooth', 2: 'Headphone' };
+const SRC_OUT   = { 0: 'spk', 1: 'bt', 2: 'hp' };
+function setOutput(out) {
+  activeOutput = out;
+  $('tuneCard').dataset.out = out;
+  for (const b of document.querySelectorAll('.out-switch .seg-btn'))
+    b.setAttribute('aria-pressed', String(b.dataset.out === out));
+}
+for (const b of document.querySelectorAll('.out-switch .seg-btn'))
+  b.addEventListener('click', () => setOutput(b.dataset.out));
+
+// ---- section nav (view-transition crossfade) ----
+function showTab(name) {
+  const apply = () => {
+    for (const p of document.querySelectorAll('.tab-panel')) p.hidden = p.dataset.tab !== name;
+    for (const t of document.querySelectorAll('.nav .tab')) t.setAttribute('aria-selected', String(t.dataset.tab === name));
+  };
+  if (document.startViewTransition && !reduceMotion) document.startViewTransition(apply);
+  else apply();
+}
+for (const t of document.querySelectorAll('.nav .tab'))
+  t.addEventListener('click', () => showTab(t.dataset.tab));
 
 // ---- connection ----
 function setStatus(state, label) {
@@ -832,9 +1207,13 @@ function setStatus(state, label) {
 function setConnected(on) {
   $('connectView').hidden = on;
   $('panel').hidden = !on;
+  $('tabs').hidden = !on;
+  $('railFoot').hidden = !on;
   $('disconnect').disabled = !on;
   if (on) {
     setStatus('connected', 'Connected');
+    setOutput('spk');
+    showTab('tune');
     $('panel').classList.add('panel-in');
     // strip the one-shot entrance class after it plays so re-renders don't repeat it
     setTimeout(() => $('panel').classList.remove('panel-in'), 700);
@@ -848,92 +1227,189 @@ function setConnected(on) {
   }
 }
 
-$('connect').onclick = async () => {
-  try {
-    if (!navigator.bluetooth) {
-      banner('This browser has no Web Bluetooth. Open this page in Chrome or Edge on desktop or Android.');
-      return;
-    }
-    $('banner').classList.remove('show');
-    setStatus('connecting', 'Connecting...');
-    log('requesting device...', 'dim-t');
-    device = await navigator.bluetooth.requestDevice({ filters: [{ name: 'GameBoy HiFi Setup' }], optionalServices: [SVC] });
-    device.addEventListener('gattserverdisconnected', () => { log('device disconnected', 'dim-t'); setConnected(false); });
-    const server = await device.gatt.connect();
-    const svc = await server.getPrimaryService(SVC);
-    settingsChr = await svc.getCharacteristic(SETTINGS);
-    actionChr   = await svc.getCharacteristic(ACTION);
+// Web Bluetooth on BlueZ/Linux routinely fails a GATT op on the first try
+// ("GATT operation failed for unknown reason") or leaves connect() hanging, so
+// the whole connect+discovery pipeline is retried internally -- resetting the
+// link between tries -- rather than making the user click Connect again (which
+// reopens the device chooser). The picked device is cached so retries and
+// reconnects never re-prompt, and unexpected drops trigger a silent reconnect.
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+function withTimeout(p, ms, label) {
+  p.catch(() => {});   // swallow a late rejection once we've moved on past the timeout
+  return Promise.race([p, sleep(ms).then(() => { throw new Error(label + ' timed out'); })]);
+}
+async function retryOp(fn, label, tries = 3, delay = 300) {
+  let last;
+  for (let i = 0; i < tries; i++) {
+    try { return await fn(); }
+    catch (e) { last = e; log(`${label} attempt ${i + 1}/${tries} failed: ${e.message || e}`, 'dim-t'); await sleep(delay); }
+  }
+  throw last;
+}
 
-    // subscribe to change notifications (reflects console edits + mode changes)
+let manualDisconnect = false;   // set while the user is disconnecting (suppresses auto-reconnect)
+let connecting = false;         // guards overlapping attempts + our own retry-loop disconnects
+
+// settings + spectrum notification handlers (named so reconnects don't stack duplicates)
+function onSettingsChanged(e) { decodeToControls(e.target.value); log('settings updated', 'dim-t'); }
+function onSpectrum(e) {
+  const dv = e.target.value;
+  const u = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
+  const src = u[0], n = (u.length - 1) >> 1;   // byte 0 = source (0 speaker, 1 BT, 2 headphone)
+  specL = u.slice(1, 1 + n); specR = u.slice(1 + n);
+  specLastFrame = performance.now();
+  if (src !== specSrc) {                        // audio source changed -> follow it
+    specSrc = src;
+    $('specHint').textContent = SRC_LABEL[src] ?? 'live output';
+    if (SRC_OUT[src]) setOutput(SRC_OUT[src]);  // speaker / bluetooth / headphone
+  }
+}
+
+function onDisconnected() {
+  if (connecting) return;   // ignore the disconnect-resets our own retry loop causes
+  log('device disconnected', 'dim-t');
+  setConnected(false);
+  if (!manualDisconnect && device) autoReconnect();
+  manualDisconnect = false;
+}
+
+// Connect the GATT server + grab the two required characteristics, retrying the
+// whole thing with a disconnect-reset between attempts. Returns the service.
+async function establishGatt(dev) {
+  let last;
+  for (let i = 0; i < 6; i++) {
+    try {
+      if (i > 0 && dev.gatt.connected) { try { dev.gatt.disconnect(); } catch {} await sleep(250); }
+      const server = await withTimeout(dev.gatt.connect(), 9000, 'connect');
+      const svc    = await withTimeout(server.getPrimaryService(SVC), 7000, 'service discovery');
+      settingsChr  = await svc.getCharacteristic(SETTINGS);
+      actionChr    = await svc.getCharacteristic(ACTION);
+      return svc;
+    } catch (e) {
+      last = e;
+      log(`connect attempt ${i + 1}/6 failed: ${e.message || e}`, 'dim-t');
+      await sleep(300 + i * 250);   // linear backoff
+    }
+  }
+  throw last;
+}
+
+// Subscribe settings + the optional (OTA/console/spectrum) characteristics.
+// Re-runnable on reconnect; the optional ones tolerate firmware that lacks them.
+async function setupServices(svc) {
+  settingsChr.addEventListener('characteristicvaluechanged', onSettingsChanged);
+  await retryOp(async () => {
     await settingsChr.startNotifications();
-    settingsChr.addEventListener('characteristicvaluechanged', (e) => {
-      decodeToControls(e.target.value); log('settings updated', 'dim-t');
-    });
     decodeToControls(await settingsChr.readValue());
+  }, 'settings');
 
-    // OTA characteristics are optional; tolerate firmware that predates them.
-    try {
-      otaCtlChr  = await svc.getCharacteristic(OTACTL);
-      otaDataChr = await svc.getCharacteristic(OTADATA);
-      resetOtaUi();   // start every session with a clean card (never stuck mid-flash)
-      await otaCtlChr.startNotifications();
-      otaCtlChr.addEventListener('characteristicvaluechanged', (e) => onOtaStatus(e.target.value));
-      await otaCtlChr.writeValue(new Uint8Array([OTA.GET_INFO]));   // -> running version/slot
-    } catch {
-      otaCtlChr = otaDataChr = null;
-      $('fwRunning').textContent = 'not supported';
-      $('fwInstalled').textContent = 'Installed firmware: (this build predates OTA)';
-      $('fwDrop').style.display = 'none';
-      $('fwFlash').disabled = true;
-      log('firmware update not available on this device', 'dim-t');
-    }
+  try {
+    otaCtlChr  = await svc.getCharacteristic(OTACTL);
+    otaDataChr = await svc.getCharacteristic(OTADATA);
+    resetOtaUi();   // start every session with a clean card (never stuck mid-flash)
+    await otaCtlChr.startNotifications();
+    otaCtlChr.addEventListener('characteristicvaluechanged', (e) => onOtaStatus(e.target.value));
+    await otaCtlChr.writeValue(new Uint8Array([OTA.GET_INFO]));   // -> running version/slot
+  } catch {
+    otaCtlChr = otaDataChr = null;
+    $('fwRunning').textContent = 'not supported';
+    $('fwInstalled').textContent = 'Installed firmware: (this build predates OTA)';
+    $('fwDrop').style.display = 'none';
+    $('fwFlash').disabled = true;
+    log('firmware update not available on this device', 'dim-t');
+  }
 
-    // Device console (LOG notify + CMD write); optional, tolerate older firmware.
-    try {
-      logChr = await svc.getCharacteristic(LOG);
-      cmdChr = await svc.getCharacteristic(CMD);
-      conDec = new TextDecoder();
-      $('conOut').textContent = '';
-      await logChr.startNotifications();
-      logChr.addEventListener('characteristicvaluechanged', (e) => conFeed(e.target.value));
-      $('console').hidden = false;
-      log('device console attached', 'dim-t');
-    } catch {
-      logChr = cmdChr = null;
-      $('console').hidden = true;
-    }
+  try {
+    logChr = await svc.getCharacteristic(LOG);
+    cmdChr = await svc.getCharacteristic(CMD);
+    conDec = new TextDecoder();
+    $('conOut').textContent = '';
+    await logChr.startNotifications();
+    logChr.addEventListener('characteristicvaluechanged', (e) => conFeed(e.target.value));
+    $('console').hidden = false;
+    log('device console attached', 'dim-t');
+  } catch {
+    logChr = cmdChr = null;
+    $('console').hidden = true;
+  }
 
-    // Audio spectrum (SPECTRUM notify); optional, tolerate older firmware.
-    try {
-      specChr = await svc.getCharacteristic(SPECTRUM);
-      await specChr.startNotifications();
-      specChr.addEventListener('characteristicvaluechanged', (e) => {
-        const dv = e.target.value;
-        const u = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
-        const src = u[0], n = (u.length - 1) >> 1;   // byte 0 = source (0 local, 1 BT)
-        specL = u.slice(1, 1 + n); specR = u.slice(1 + n);
-        if (src !== specSrc) {
-          specSrc = src;
-          $('specHint').textContent = (src ? 'Bluetooth output' : 'Speaker / headphone output') + ' · L up / R down';
-        }
-      });
-      $('spectrum').hidden = false;
-      startSpec();
-      log('spectrum attached', 'dim-t');
-    } catch {
-      specChr = null;
-      $('spectrum').hidden = true;
-    }
+  try {
+    specChr = await svc.getCharacteristic(SPECTRUM);
+    await specChr.startNotifications();
+    specChr.addEventListener('characteristicvaluechanged', onSpectrum);
+    $('spectrum').hidden = false;
+    startSpec();
+    log('spectrum attached', 'dim-t');
+  } catch {
+    specChr = null;
+    $('spectrum').hidden = true;
+  }
+}
 
+// Establish + wire up everything using the already-picked device. No chooser.
+async function connectFlow(label) {
+  if (connecting) return;
+  connecting = true;
+  try {
+    $('banner').classList.remove('show');
+    setStatus('connecting', label);
+    const svc = await establishGatt(device);
+    await setupServices(svc);
     setConnected(true);
     log('connected', 'ok-t');
+  } finally {
+    connecting = false;
+  }
+}
+
+async function autoReconnect() {
+  log('link dropped; reconnecting', 'dim-t');
+  try { await connectFlow('Reconnecting'); }
+  catch (e) {
+    setStatus('disconnected', 'Not connected');
+    banner('Lost the connection and could not get it back. Make sure the mod is on, then press Connect.');
+    log('auto-reconnect failed: ' + e, 'err-t');
+  }
+}
+
+$('connect').onclick = async () => {
+  if (!navigator.bluetooth) {
+    banner('This browser has no Web Bluetooth. Open this page in Chrome or Edge on desktop or Android.');
+    return;
+  }
+  try {
+    manualDisconnect = false;
+    if (!device) {                                   // first time: pick the device (needs the click gesture)
+      setStatus('connecting', 'Connecting');
+      log('requesting device', 'dim-t');
+      device = await navigator.bluetooth.requestDevice({ filters: [{ name: 'GameBoy HiFi Setup' }], optionalServices: [SVC] });
+      device.addEventListener('gattserverdisconnected', onDisconnected);
+    }
+    await connectFlow('Connecting');                 // reuses the cached device on later attempts
   } catch (e) {
     setStatus('disconnected', 'Not connected');
     if (e && e.name === 'NotFoundError') log('connection cancelled', 'dim-t');
-    else log('connect failed: ' + e, 'err-t');
+    else {
+      log('connect failed: ' + e, 'err-t');
+      banner('Could not connect. Make sure the mod is powered on and nearby, then press Connect again.');
+    }
   }
 };
-$('disconnect').onclick = () => { if (device?.gatt.connected) device.gatt.disconnect(); };
+$('disconnect').onclick = () => {
+  manualDisconnect = true;
+  if (device?.gatt.connected) device.gatt.disconnect();
+  else setConnected(false);
+};
+
+// If the browser already remembers this device (granted in a past session), cache
+// it so the first Connect skips the chooser. Behind a flag on some platforms;
+// absence is fine. Does not auto-connect -- Web Bluetooth needs a user gesture.
+if (navigator.bluetooth?.getDevices) {
+  navigator.bluetooth.getDevices().then((ds) => {
+    const d = ds.find((x) => x.name === 'GameBoy HiFi Setup');
+    if (d && !device) { device = d; device.addEventListener('gattserverdisconnected', onDisconnected); }
+  }).catch(() => {});
+}
 </script>
 </body>
 </html>
