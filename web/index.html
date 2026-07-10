@@ -211,8 +211,6 @@
   .note { font-size: .82rem; color: var(--muted); margin: .2rem .15rem .1rem; line-height: 1.5; }
   .note b { color: var(--ink); font-weight: 600; }
 
-  .chime-row { display: flex; flex-wrap: wrap; gap: .4rem; margin: .3rem .15rem; }
-  .chime-row button { padding: .45rem .8rem; font-size: .85rem; }
   .clip-row { display: flex; gap: .5rem; margin: .9rem .15rem .2rem; }
   .save-row { display: flex; align-items: center; gap: .8rem; margin: .3rem .15rem; }
   .save-row .saved { font-size: .85rem; color: var(--ok); opacity: 0; transition: opacity .2s; }
@@ -230,6 +228,20 @@
     font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11.5px; line-height: 1.6; color: var(--muted); }
   #log:empty { display: none; }
   .ok-t { color: var(--ok); } .err-t { color: var(--danger); } .dim-t { color: var(--faint); }
+
+  /* ---- device console ---- */
+  #conOut { white-space: pre-wrap; word-break: break-word; background: oklch(0.13 0.012 285);
+    border: 1px solid var(--border); border-radius: var(--r-sm); padding: .55rem .7rem; margin: .2rem .15rem .1rem;
+    height: 13rem; overflow: auto; overscroll-behavior: contain;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11.5px; line-height: 1.6; color: var(--muted); }
+  #conOut:empty::before { content: "waiting for device log\2026"; color: var(--faint); }
+  .hint-btn { font: inherit; font-size: .75rem; padding: .2rem .55rem; color: var(--faint);
+    background: transparent; border: 1px solid var(--border); border-radius: var(--r-sm); flex: 0 0 auto; }
+  .hint-btn:hover { color: var(--ink); background: var(--surface); border-color: var(--faint); }
+
+  /* ---- spectrum ---- */
+  #specCanvas { width: 100%; height: 140px; display: block; margin-top: .3rem;
+    background: oklch(0.13 0.012 285); border: 1px solid var(--border); border-radius: var(--r-sm); }
 
   /* a global error banner for the big stuff (no Bluetooth, etc.) */
   #banner { display: none; margin: .6rem 0 0; padding: .7rem .9rem; border-radius: var(--r-sm);
@@ -404,20 +416,8 @@
     </section>
 
     <section class="group">
-      <div class="group-head"><h2>Test &amp; save</h2></div>
-      <p class="note">Play a chime to check the speaker, or play an uploaded clip by name.</p>
-      <div class="chime-row">
-        <button data-chime="0">Pairing</button>
-        <button data-chime="1">Connect</button>
-        <button data-chime="2">Disconnect</button>
-        <button data-chime="3">Rebond</button>
-        <button data-chime="4">Mode</button>
-      </div>
-      <div class="clip-row">
-        <input type="text" id="clipName" placeholder="clip name" value="startup">
-        <button id="play">Play clip</button>
-      </div>
-      <div class="save-row" style="margin-top:1.1rem">
+      <div class="group-head"><h2>Save</h2></div>
+      <div class="save-row">
         <button id="save" class="btn-primary">Save to device</button>
         <button id="disconnect" class="btn-ghost">Disconnect</button>
         <span class="saved" id="savedMsg">Saved</span>
@@ -441,6 +441,22 @@
       </div>
     </section>
 
+    <section class="group" id="spectrum" hidden>
+      <div class="group-head"><h2>Spectrum</h2><span class="hint" id="specHint">live output &middot; L up / R down</span></div>
+      <canvas id="specCanvas"></canvas>
+    </section>
+
+    <section class="group" id="console" hidden>
+      <div class="group-head"><h2>Device console</h2><button type="button" id="conClear" class="hint-btn">clear</button></div>
+      <p class="note">The device's live log, plus the same commands as the wired console
+        (<code>help</code>, <code>get</code>, <code>batt</code>, <code>nr</code>, ...). Replies stream back below.</p>
+      <div id="conOut" aria-live="polite"></div>
+      <div class="clip-row">
+        <input type="text" id="conInput" placeholder="type a command, e.g. get" autocomplete="off" spellcheck="false" enterkeyhint="send">
+        <button id="conSend" class="btn-primary">Send</button>
+      </div>
+    </section>
+
     <details class="activity">
       <summary>Activity log</summary>
       <div id="log"></div>
@@ -455,13 +471,18 @@ const SETTINGS = '5a4d0001-1f2e-4c6b-9a8f-0102030405aa';
 const ACTION   = '5a4d0002-1f2e-4c6b-9a8f-0102030405aa';
 const OTACTL   = '5a4d0003-1f2e-4c6b-9a8f-0102030405aa';  // write + notify (OTA control/status)
 const OTADATA  = '5a4d0004-1f2e-4c6b-9a8f-0102030405aa';  // write-no-response (OTA chunks)
+const LOG      = '5a4d0005-1f2e-4c6b-9a8f-0102030405aa';  // notify (device log/console stream)
+const CMD      = '5a4d0006-1f2e-4c6b-9a8f-0102030405aa';  // write (console command line)
+const SPECTRUM = '5a4d0007-1f2e-4c6b-9a8f-0102030405aa';  // notify (stereo audio spectrum: L bytes then R bytes)
 const WIRE_LEN = 28;
 const VERSION  = 6;
 // OTA opcodes/status, must match the firmware BLE config.
 const OTA = { BEGIN:0x01, END:0x02, ABORT:0x03, GET_INFO:0x04,
               READY:0x10, ACK:0x11, DONE:0x12, INFO:0x13, ERROR:0x1f };
 
-let device, settingsChr, actionChr, otaCtlChr, otaDataChr;
+let device, settingsChr, actionChr, otaCtlChr, otaDataChr, logChr, cmdChr, specChr;
+let conDec = new TextDecoder();   // streaming UTF-8 decoder for the device log
+let specL = null, specR = null, specSmL = null, specSmR = null, specRAF = 0, specSrc = -1;  // spectrum state
 let otaImage = null;   // ArrayBuffer of the chosen .bin
 let ota = null;        // active transfer state
 let suppress = false;     // ignore control 'input' events while populating from the device
@@ -563,13 +584,6 @@ $('save').onclick = () => {
   const s = $('savedMsg'); s.classList.add('show');
   setTimeout(() => s.classList.remove('show'), 1600);
   log('saved to device', 'ok-t');
-};
-document.querySelectorAll('[data-chime]').forEach(b =>
-  b.onclick = () => sendAction([0x02, parseInt(b.dataset.chime)]));
-$('play').onclick = () => {
-  const name = $('clipName').value;
-  sendAction([0x03, ...new TextEncoder().encode(name)]);
-  log('play "' + name + '"', 'dim-t');
 };
 
 // ---- firmware update (OTA) ----
@@ -743,6 +757,72 @@ $('fwAbort').onclick = abortOta;
   drop.addEventListener('drop', (e) => { const f = e.dataTransfer?.files[0]; if (f) onFwFile(f); });
 }
 
+// ---- device console (LOG notify + CMD write) ----
+// The device streams its ESP_LOG / console output on the LOG characteristic and
+// takes command lines on CMD. It echoes each command ("hifi> get") and its output
+// back over LOG, so we don't echo locally. Same command set as the wired console.
+function conPrint(text) {
+  const el = $('conOut');
+  const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+  el.textContent += text;
+  if (el.textContent.length > 20000) el.textContent = el.textContent.slice(-16000);
+  if (atBottom) el.scrollTop = el.scrollHeight;   // keep pinned to bottom unless scrolled up
+}
+function conFeed(dv) {
+  conPrint(conDec.decode(new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength), { stream: true }));
+}
+async function conSend() {
+  const inp = $('conInput');
+  const line = inp.value.trim();
+  if (!line || !cmdChr) return;
+  try {
+    await cmdChr.writeValueWithoutResponse(new TextEncoder().encode(line.slice(0, 150)));
+    inp.value = '';
+  } catch (e) {
+    conPrint(`\n[send failed: ${e}]\n`);
+  }
+}
+$('conSend').onclick = conSend;
+$('conClear').onclick = () => { $('conOut').textContent = ''; };
+$('conInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); conSend(); }
+});
+
+// ---- spectrum visualizer (SPECTRUM notify) ----
+// 64-byte frames: 32 left magnitude bytes then 32 right (0..255). Drawn as a
+// center-line stereo meter (L grows up, R grows down) with fast-attack/slow-decay
+// smoothing. Rough + cheap on purpose; a full design pass comes later.
+function startSpec() {
+  const cv = $('specCanvas'), ctx = cv.getContext('2d');
+  const draw = () => {
+    if (!specChr) { specRAF = 0; return; }   // stopped on disconnect
+    const w = cv.clientWidth, h = cv.clientHeight;
+    if (cv.width !== w) cv.width = w;
+    if (cv.height !== h) cv.height = h;
+    ctx.clearRect(0, 0, w, h);
+    if (specL && specR) {
+      const n = specL.length;
+      if (!specSmL || specSmL.length !== n) { specSmL = new Float32Array(n); specSmR = new Float32Array(n); }
+      const gap = 2, bw = (w - gap * (n - 1)) / n, mid = h / 2;
+      for (let i = 0; i < n; i++) {
+        const tl = specL[i] / 255, tr = specR[i] / 255;
+        specSmL[i] += (tl - specSmL[i]) * (tl > specSmL[i] ? 0.6 : 0.18);
+        specSmR[i] += (tr - specSmR[i]) * (tr > specSmR[i] ? 0.6 : 0.18);
+        const x = i * (bw + gap);
+        const hl = specSmL[i] * (mid - 1), hr = specSmR[i] * (mid - 1);
+        ctx.fillStyle = '#9a7cf0';
+        ctx.fillRect(x, mid - hl, bw, hl);       // left: up from center
+        ctx.fillStyle = '#6f5ec0';
+        ctx.fillRect(x, mid, bw, hr);            // right: down from center
+      }
+      ctx.fillStyle = 'rgba(255,255,255,0.12)';
+      ctx.fillRect(0, Math.floor(mid), w, 1);    // center line
+    }
+    specRAF = requestAnimationFrame(draw);
+  };
+  if (!specRAF) specRAF = requestAnimationFrame(draw);
+}
+
 // ---- connection ----
 function setStatus(state, label) {
   const p = $('status');
@@ -762,6 +842,9 @@ function setConnected(on) {
     setStatus('disconnected', 'Not connected');
     if (ota) ota.error = 'disconnected';   // unblock/stop any in-flight pump
     otaCtlChr = otaDataChr = null;
+    logChr = cmdChr = null;
+    specChr = null;   // stops the spectrum RAF loop
+    specSrc = -1;     // re-label on reconnect
   }
 }
 
@@ -803,6 +886,43 @@ $('connect').onclick = async () => {
       $('fwDrop').style.display = 'none';
       $('fwFlash').disabled = true;
       log('firmware update not available on this device', 'dim-t');
+    }
+
+    // Device console (LOG notify + CMD write); optional, tolerate older firmware.
+    try {
+      logChr = await svc.getCharacteristic(LOG);
+      cmdChr = await svc.getCharacteristic(CMD);
+      conDec = new TextDecoder();
+      $('conOut').textContent = '';
+      await logChr.startNotifications();
+      logChr.addEventListener('characteristicvaluechanged', (e) => conFeed(e.target.value));
+      $('console').hidden = false;
+      log('device console attached', 'dim-t');
+    } catch {
+      logChr = cmdChr = null;
+      $('console').hidden = true;
+    }
+
+    // Audio spectrum (SPECTRUM notify); optional, tolerate older firmware.
+    try {
+      specChr = await svc.getCharacteristic(SPECTRUM);
+      await specChr.startNotifications();
+      specChr.addEventListener('characteristicvaluechanged', (e) => {
+        const dv = e.target.value;
+        const u = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
+        const src = u[0], n = (u.length - 1) >> 1;   // byte 0 = source (0 local, 1 BT)
+        specL = u.slice(1, 1 + n); specR = u.slice(1 + n);
+        if (src !== specSrc) {
+          specSrc = src;
+          $('specHint').textContent = (src ? 'Bluetooth output' : 'Speaker / headphone output') + ' · L up / R down';
+        }
+      });
+      $('spectrum').hidden = false;
+      startSpec();
+      log('spectrum attached', 'dim-t');
+    } catch {
+      specChr = null;
+      $('spectrum').hidden = true;
     }
 
     setConnected(true);
