@@ -32,6 +32,7 @@
 #include "settings.h"
 #include "sfx.h"
 #include "audio_pipeline.h"   // spectrum tap for the BLE web visualizer
+#include "app_sm.h"           // app_sm_hp_plugged(): distinguishes speaker vs headphone for the spectrum source byte
 
 static const char *TAG = "ble_cfg";
 
@@ -144,7 +145,7 @@ enum {
 // ---- audio spectrum (web visualizer) --------------------------------------
 // SPECTRUM (notify): a stereo bar spectrum of the live audio the user is hearing,
 // streamed at ~20 fps while a client is subscribed. Payload byte 0 is the source
-// (0 = local speaker/HP, 1 = Bluetooth), then SPEC_BINS left bytes and SPEC_BINS
+// (0 = speaker, 1 = Bluetooth, 2 = headphone), then SPEC_BINS left bytes and SPEC_BINS
 // right bytes (0..255 each). Gated on the CCCD: the audio-side FFT tap only runs
 // while someone is watching.
 #define SPEC_BINS         32    // bands per channel (payload = 1 + 2 * SPEC_BINS)
@@ -701,7 +702,7 @@ static void ble_cmd_task(void *arg)
 static void ble_spec_task(void *arg)
 {
     (void)arg;
-    uint8_t frame[1 + 2 * SPEC_BINS];   // [0]=source (0 local, 1 BT), then L bands, R bands
+    uint8_t frame[1 + 2 * SPEC_BINS];   // [0]=source (0 speaker, 1 BT, 2 headphone), then L bands, R bands
     for (;;) {
         // Skip while nobody's watching, and yield to audio when heap is tight so
         // the visualizer can never starve an active A2DP stream.
@@ -711,7 +712,7 @@ static void ble_spec_task(void *arg)
         }
         int n = audio_pipeline_compute_spectrum(frame + 1, SPEC_BINS);
         if (n > 0) {
-            frame[0] = audio_pipeline_spectrum_is_bt() ? 1 : 0;
+            frame[0] = audio_pipeline_spectrum_is_bt() ? 1 : (app_sm_hp_plugged() ? 2 : 0);
             esp_ble_gatts_send_indicate(s_gatts_if, s_conn_id, s_handles[IDX_SPEC_VAL],
                                         (uint16_t)(1 + n), frame, false /* notify */);
         }
