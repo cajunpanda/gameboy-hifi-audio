@@ -8,6 +8,8 @@
 #include "esp_check.h"
 #include "esp_console.h"
 #include "esp_log.h"
+#include "esp_system.h"
+#include "esp_heap_caps.h"
 #include "linenoise/linenoise.h"
 
 #include "app_sm.h"
@@ -458,6 +460,19 @@ static int cmd_get(int argc, char **argv)
     return 0;
 }
 
+// `heap`: free-heap readout for debugging RAM pressure (e.g. BLE + A2DP
+// coexistence). Internal is the DMA-capable pool the BT stack allocates from.
+static int cmd_heap(int argc, char **argv)
+{
+    (void)argc; (void)argv;
+    printf("heap: free=%u internal=%u largest_internal=%u min_ever=%u\n",
+           (unsigned)esp_get_free_heap_size(),
+           (unsigned)esp_get_free_internal_heap_size(),
+           (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL),
+           (unsigned)esp_get_minimum_free_heap_size());
+    return 0;
+}
+
 static void register_cmds(void)
 {
     const esp_console_cmd_t cmds[] = {
@@ -487,6 +502,7 @@ static void register_cmds(void)
         { .command = "ls",    .help = "List the clip store",                     .func = cmd_ls },
         { .command = "save",  .help = "Persist settings to NVS",                 .func = cmd_save },
         { .command = "get",   .help = "Show current settings",                   .func = cmd_get },
+        { .command = "heap",  .help = "Show free heap (debug RAM pressure)",     .func = cmd_heap },
     };
     for (size_t i = 0; i < sizeof(cmds) / sizeof(cmds[0]); i++) {
         ESP_ERROR_CHECK(esp_console_cmd_register(&cmds[i]));

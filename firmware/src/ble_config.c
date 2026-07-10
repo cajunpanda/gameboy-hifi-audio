@@ -21,9 +21,17 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/queue.h"
+#include "freertos/stream_buffer.h"
+
+#include "esp_console.h"     // BLE console: esp_console_run() reuses the UART cmd table
+
+#include <stdarg.h>
+#include <stdlib.h>
 
 #include "settings.h"
 #include "sfx.h"
+#include "audio_pipeline.h"   // spectrum tap for the BLE web visualizer
 
 static const char *TAG = "ble_cfg";
 
@@ -57,6 +65,21 @@ static const uint8_t OTACTL_UUID128[16] = {
 static const uint8_t OTADATA_UUID128[16] = {
     0xaa, 0x05, 0x04, 0x03, 0x02, 0x01, 0x8f, 0x9a,
     0x6b, 0x4c, 0x2e, 0x1f, 0x04, 0x00, 0x4d, 0x5a,
+};
+//   log:     5a4d0005-...   (Notify: device -> client ESP_LOG / console stream)
+//   cmd:     5a4d0006-...   (Write / Write-NR: client -> device console line)
+static const uint8_t LOG_UUID128[16] = {
+    0xaa, 0x05, 0x04, 0x03, 0x02, 0x01, 0x8f, 0x9a,
+    0x6b, 0x4c, 0x2e, 0x1f, 0x05, 0x00, 0x4d, 0x5a,
+};
+static const uint8_t CMD_UUID128[16] = {
+    0xaa, 0x05, 0x04, 0x03, 0x02, 0x01, 0x8f, 0x9a,
+    0x6b, 0x4c, 0x2e, 0x1f, 0x06, 0x00, 0x4d, 0x5a,
+};
+//   spec:    5a4d0007-...   (Notify: stereo live audio spectrum, L bands + R bands)
+static const uint8_t SPEC_UUID128[16] = {
+    0xaa, 0x05, 0x04, 0x03, 0x02, 0x01, 0x8f, 0x9a,
+    0x6b, 0x4c, 0x2e, 0x1f, 0x07, 0x00, 0x4d, 0x5a,
 };
 
 // Settings wire format: explicit little-endian byte layout, decoupled from the
@@ -101,6 +124,32 @@ enum {
 #define OTA_CHUNK_MAX  500    // per-write payload cap (also bounded by the MTU)
 #define OTA_STALL_MS   15000  // abort a transfer (or an un-proceeded begin) idle this long
 
+// ---- BLE debug console (log stream + command input) -----------------------
+// LOG (notify): mirrors the ESP_LOG output the UART console carries, so a BLE
+// client can `tail -f` the device without the Tag-Connect cable. CMD (write):
+// one console command line, dispatched through the same esp_console command
+// table the UART REPL registers. Both are purely additive; the UART logger and
+// REPL are untouched (the LOG vprintf hook chains to the previous logger).
+#define BLE_LOG_VAL_MAX  512    // max LOG notify payload (also the value attr length)
+#define BLE_CMD_VAL_MAX  160    // max console line accepted on CMD
+#define BLE_LOG_SB_SIZE  2048   // LOG stream-buffer capacity; overflow silently drops
+
+// A2DP streaming and the BLE stack share the internal (DMA-capable) heap. Under
+// heavy load -- a BT sink streaming while the web config is open -- the SBC
+// encoder can be starved of its ~4 KB TX buffers. Never send a BLE notification
+// (log or spectrum) when free internal heap is below this floor: audio wins, and
+// this breaks the "BT error -> log tee -> more BLE allocs -> worse" spiral.
+#define BLE_NOTIFY_HEAP_FLOOR  18000
+
+// ---- audio spectrum (web visualizer) --------------------------------------
+// SPECTRUM (notify): a stereo bar spectrum of the live audio the user is hearing,
+// streamed at ~20 fps while a client is subscribed. Payload byte 0 is the source
+// (0 = local speaker/HP, 1 = Bluetooth), then SPEC_BINS left bytes and SPEC_BINS
+// right bytes (0..255 each). Gated on the CCCD: the audio-side FFT tap only runs
+// while someone is watching.
+#define SPEC_BINS         32    // bands per channel (payload = 1 + 2 * SPEC_BINS)
+#define SPEC_INTERVAL_MS  50    // ~20 fps
+
 // Attribute-table indices.
 enum {
     IDX_SVC,
@@ -114,6 +163,14 @@ enum {
     IDX_OTACTL_CCCD,
     IDX_OTADATA_DECL,
     IDX_OTADATA_VAL,
+    IDX_LOG_DECL,
+    IDX_LOG_VAL,
+    IDX_LOG_CCCD,
+    IDX_CMD_DECL,
+    IDX_CMD_VAL,
+    IDX_SPEC_DECL,
+    IDX_SPEC_VAL,
+    IDX_SPEC_CCCD,
     IDX_NB,
 };
 
@@ -128,8 +185,13 @@ static const uint8_t  k_prop_w   = ESP_GATT_CHAR_PROP_BIT_WRITE;
 static const uint8_t  k_prop_wn  = ESP_GATT_CHAR_PROP_BIT_WRITE |
                                    ESP_GATT_CHAR_PROP_BIT_NOTIFY;     // OTACTL
 static const uint8_t  k_prop_wnr = ESP_GATT_CHAR_PROP_BIT_WRITE_NR;  // OTADATA
+static const uint8_t  k_prop_n   = ESP_GATT_CHAR_PROP_BIT_NOTIFY;    // LOG
+static const uint8_t  k_prop_cmd = ESP_GATT_CHAR_PROP_BIT_WRITE |
+                                   ESP_GATT_CHAR_PROP_BIT_WRITE_NR;  // CMD
 static uint8_t        s_cccd_val[2]     = {0, 0};  // settings CCCD (stack-managed)
 static uint8_t        s_cccd_ota_val[2] = {0, 0};  // OTACTL CCCD (stack-managed)
+static uint8_t        s_cccd_log_val[2]  = {0, 0};  // LOG CCCD (stack-managed)
+static uint8_t        s_cccd_spec_val[2] = {0, 0};  // SPECTRUM CCCD (stack-managed)
 static uint8_t        s_ota_attr_dummy  = 0;       // placeholder initial value for the AUTO_RSP OTA chars
 
 static const esp_gatts_attr_db_t k_gatt_db[IDX_NB] = {
@@ -183,6 +245,43 @@ static const esp_gatts_attr_db_t k_gatt_db[IDX_NB] = {
     [IDX_OTADATA_VAL] = { {ESP_GATT_AUTO_RSP},
         {ESP_UUID_LEN_128, (uint8_t *)OTADATA_UUID128, ESP_GATT_PERM_WRITE,
          512, sizeof(s_ota_attr_dummy), &s_ota_attr_dummy} },
+
+    // LOG characteristic: notify-only ESP_LOG/console stream + CCCD. AUTO_RSP;
+    // the value is never read/written by the client, only notified from
+    // ble_log_task. Client subscribes via the CCCD to start the stream.
+    [IDX_LOG_DECL] = { {ESP_GATT_AUTO_RSP},
+        {ESP_UUID_LEN_16, (uint8_t *)&k_char_decl_uuid, ESP_GATT_PERM_READ,
+         sizeof(uint8_t), sizeof(uint8_t), (uint8_t *)&k_prop_n} },
+    [IDX_LOG_VAL] = { {ESP_GATT_AUTO_RSP},
+        {ESP_UUID_LEN_128, (uint8_t *)LOG_UUID128, ESP_GATT_PERM_READ,
+         BLE_LOG_VAL_MAX, sizeof(s_ota_attr_dummy), &s_ota_attr_dummy} },
+    [IDX_LOG_CCCD] = { {ESP_GATT_AUTO_RSP},
+        {ESP_UUID_LEN_16, (uint8_t *)&k_cccd_uuid,
+         ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE,
+         sizeof(s_cccd_log_val), sizeof(s_cccd_log_val), s_cccd_log_val} },
+
+    // CMD characteristic: declaration + value. The client writes one console
+    // command line here (AUTO_RSP buffers the write, fires WRITE_EVT; we copy +
+    // queue it for ble_cmd_task). No CCCD (never notified).
+    [IDX_CMD_DECL] = { {ESP_GATT_AUTO_RSP},
+        {ESP_UUID_LEN_16, (uint8_t *)&k_char_decl_uuid, ESP_GATT_PERM_READ,
+         sizeof(uint8_t), sizeof(uint8_t), (uint8_t *)&k_prop_cmd} },
+    [IDX_CMD_VAL] = { {ESP_GATT_AUTO_RSP},
+        {ESP_UUID_LEN_128, (uint8_t *)CMD_UUID128, ESP_GATT_PERM_WRITE,
+         BLE_CMD_VAL_MAX, sizeof(s_ota_attr_dummy), &s_ota_attr_dummy} },
+
+    // SPECTRUM characteristic: notify-only stereo bar spectrum + CCCD. Notified
+    // from ble_spec_task at ~20 fps while subscribed; never read/written.
+    [IDX_SPEC_DECL] = { {ESP_GATT_AUTO_RSP},
+        {ESP_UUID_LEN_16, (uint8_t *)&k_char_decl_uuid, ESP_GATT_PERM_READ,
+         sizeof(uint8_t), sizeof(uint8_t), (uint8_t *)&k_prop_n} },
+    [IDX_SPEC_VAL] = { {ESP_GATT_AUTO_RSP},
+        {ESP_UUID_LEN_128, (uint8_t *)SPEC_UUID128, ESP_GATT_PERM_READ,
+         1 + 2 * SPEC_BINS, sizeof(s_ota_attr_dummy), &s_ota_attr_dummy} },
+    [IDX_SPEC_CCCD] = { {ESP_GATT_AUTO_RSP},
+        {ESP_UUID_LEN_16, (uint8_t *)&k_cccd_uuid,
+         ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE,
+         sizeof(s_cccd_spec_val), sizeof(s_cccd_spec_val), s_cccd_spec_val} },
 };
 
 // ---- runtime state --------------------------------------------------------
@@ -195,6 +294,17 @@ static bool          s_notify_on     = false;
 static uint32_t      s_last_gen      = 0;
 static esp_timer_handle_t s_notify_timer = NULL;
 static uint16_t      s_mtu           = 23;   // negotiated ATT MTU (ESP_GATTS_MTU_EVT)
+
+// ---- BLE debug console state ----------------------------------------------
+static bool                 s_log_notify_on = false;  // client subscribed to LOG CCCD
+static StreamBufferHandle_t s_log_sb        = NULL;    // ESP_LOG bytes -> ble_log_task
+static QueueHandle_t        s_cmd_q         = NULL;    // char* command lines -> ble_cmd_task
+static TaskHandle_t         s_log_task      = NULL;    // drains s_log_sb (feedback guard)
+static vprintf_like_t       s_prev_vprintf  = NULL;    // UART logger we chain to
+
+// ---- audio spectrum state -------------------------------------------------
+static bool          s_spec_notify_on = false;   // client subscribed to SPECTRUM CCCD
+static TaskHandle_t  s_spec_task      = NULL;     // computes + notifies the spectrum
 
 // ---- OTA transfer state ---------------------------------------------------
 static ble_ota_event_cb_t s_ota_cb       = NULL;
@@ -482,6 +592,133 @@ static void ota_handle_ctl(const uint8_t *v, uint16_t len)
 
 void ble_config_set_ota_cb(ble_ota_event_cb_t cb) { s_ota_cb = cb; }
 
+// ---- BLE debug console ----------------------------------------------------
+// ble_log_vprintf tees every ESP_LOG line into s_log_sb; ble_log_task drains it
+// to LOG notifications. The UART logger still runs (we chain to the previous
+// vprintf), so the cable path is unchanged. CMD writes are queued and run by
+// ble_cmd_task via esp_console_run(), with the command's stdout captured (a
+// per-task stdout swap) and teed back over the same LOG stream.
+
+// True while there's enough free internal heap to send a BLE notification
+// without risking the A2DP SBC encoder's buffers. Gates every notify path.
+static inline bool ble_heap_ok(void)
+{
+    return esp_get_free_internal_heap_size() > BLE_NOTIFY_HEAP_FLOOR;
+}
+
+// Enqueue raw bytes for the LOG notify stream. No-op unless a client is
+// subscribed, so nothing accumulates when nobody is listening. Also bails under
+// heap pressure so the log tee can't starve audio (and can't feed a spiral).
+static void ble_log_push(const char *data, size_t len)
+{
+    if (!s_log_sb || !s_connected || !s_log_notify_on || len == 0) return;
+    if (!ble_heap_ok()) return;
+    xStreamBufferSend(s_log_sb, data, len, 0);   // non-blocking; drops if full
+}
+static void ble_log_str(const char *s) { ble_log_push(s, strlen(s)); }
+
+// Log hook: forward to the previous (UART) logger, then tee into the BLE stream.
+// Skips logs emitted by our own drain task so a notify-path log can't feed back.
+static int ble_log_vprintf(const char *fmt, va_list ap)
+{
+    va_list ap2; va_copy(ap2, ap);
+    int n = s_prev_vprintf ? s_prev_vprintf(fmt, ap) : vprintf(fmt, ap);
+    if (s_log_sb && s_connected && s_log_notify_on &&
+        xTaskGetCurrentTaskHandle() != s_log_task) {
+        char buf[192];
+        int m = vsnprintf(buf, sizeof(buf), fmt, ap2);
+        if (m > 0) ble_log_push(buf, (size_t)(m < (int)sizeof(buf) ? m : (int)sizeof(buf)));
+    }
+    va_end(ap2);
+    return n;
+}
+
+static void ble_log_task(void *arg)
+{
+    (void)arg;
+    static uint8_t buf[BLE_LOG_VAL_MAX];
+    for (;;) {
+        // Finite timeout so a sub-trigger-level burst (e.g. a short command
+        // reply) still flushes promptly instead of waiting for more bytes.
+        size_t n = xStreamBufferReceive(s_log_sb, buf, sizeof(buf), pdMS_TO_TICKS(100));
+        if (!n) continue;
+        uint16_t chunk = (s_mtu > 3) ? (uint16_t)(s_mtu - 3) : 20;
+        if (chunk > sizeof(buf)) chunk = sizeof(buf);
+        for (size_t off = 0; off < n; ) {
+            if (!s_connected || !s_log_notify_on || !ble_heap_ok()) break;  // gone or heap-tight; drop the rest
+            uint16_t send = (uint16_t)((n - off > chunk) ? chunk : (n - off));
+            esp_err_t e = esp_ble_gatts_send_indicate(s_gatts_if, s_conn_id,
+                              s_handles[IDX_LOG_VAL], send, buf + off, false);
+            if (e != ESP_OK) { vTaskDelay(pdMS_TO_TICKS(10)); continue; }  // controller busy; retry
+            off += send;
+        }
+    }
+}
+
+// Run one console line through the shared esp_console command table, capturing
+// its stdout so the result streams back over LOG. stdout is per-task in IDF's
+// newlib, so swapping it here redirects only this task (the UART REPL keeps its
+// own). Runs in ble_cmd_task, never in the GATTS callback.
+static void ble_run_cmd(char *line)
+{
+    char echo[BLE_CMD_VAL_MAX + 8];
+    int en = snprintf(echo, sizeof(echo), "hifi> %s\n", line);
+    if (en > 0) ble_log_push(echo, (size_t)(en < (int)sizeof(echo) ? en : (int)sizeof(echo)));
+
+    char  *out = NULL; size_t outsz = 0;
+    FILE  *mem = open_memstream(&out, &outsz);
+    FILE  *saved = stdout;
+    if (mem) stdout = mem;
+    int ret = 0;
+    esp_err_t e = esp_console_run(line, &ret);
+    if (mem) { fflush(mem); stdout = saved; fclose(mem); }
+
+    if (out && outsz) ble_log_push(out, outsz);
+    if (e == ESP_ERR_NOT_FOUND) {
+        ble_log_str("unknown command (try 'help')\n");
+    } else if (e != ESP_OK && e != ESP_ERR_INVALID_ARG) {  // INVALID_ARG = empty line
+        char b[64];
+        int n = snprintf(b, sizeof(b), "error: %s\n", esp_err_to_name(e));
+        if (n > 0) ble_log_push(b, (size_t)n);
+    }
+    free(out);
+}
+
+static void ble_cmd_task(void *arg)
+{
+    (void)arg;
+    char *line;
+    for (;;) {
+        if (xQueueReceive(s_cmd_q, &line, portMAX_DELAY) == pdTRUE) {
+            ble_run_cmd(line);
+            free(line);
+        }
+    }
+}
+
+// Compute + notify the stereo audio spectrum at ~20 fps while a client watches.
+// The FFT (audio_pipeline_compute_spectrum) runs here, not in the audio task.
+static void ble_spec_task(void *arg)
+{
+    (void)arg;
+    uint8_t frame[1 + 2 * SPEC_BINS];   // [0]=source (0 local, 1 BT), then L bands, R bands
+    for (;;) {
+        // Skip while nobody's watching, and yield to audio when heap is tight so
+        // the visualizer can never starve an active A2DP stream.
+        if (!(s_connected && s_spec_notify_on) || !ble_heap_ok()) {
+            vTaskDelay(pdMS_TO_TICKS(150));
+            continue;
+        }
+        int n = audio_pipeline_compute_spectrum(frame + 1, SPEC_BINS);
+        if (n > 0) {
+            frame[0] = audio_pipeline_spectrum_is_bt() ? 1 : 0;
+            esp_ble_gatts_send_indicate(s_gatts_if, s_conn_id, s_handles[IDX_SPEC_VAL],
+                                        (uint16_t)(1 + n), frame, false /* notify */);
+        }
+        vTaskDelay(pdMS_TO_TICKS(SPEC_INTERVAL_MS));
+    }
+}
+
 // ---- notify-on-change -----------------------------------------------------
 // Poll the settings generation; push the current blob to a subscribed central
 // whenever it changes. This catches edits from either control surface (BLE write
@@ -614,6 +851,8 @@ static void gatts_cb(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if,
         s_conn_id   = param->connect.conn_id;
         memcpy(s_peer_bda, param->connect.remote_bda, sizeof(esp_bd_addr_t));
         s_connected = true;
+        s_log_notify_on = false;   // client re-subscribes to LOG after connect
+        s_spec_notify_on = false;  // and to SPECTRUM
         s_mtu       = 23;   // reset to the ATT default until MTU_EVT renegotiates
         s_last_gen  = settings_generation();
         ESP_LOGI(TAG, "BLE central connected, conn_id=%d", s_conn_id);
@@ -631,6 +870,9 @@ static void gatts_cb(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if,
                  param->disconnect.reason);
         s_connected = false;
         s_notify_on = false;
+        s_log_notify_on = false;
+        s_spec_notify_on = false;
+        audio_pipeline_spectrum_enable(false);   // stop the FFT tap when nobody's watching
         // Abort any in-flight OTA and let app_sm resume the audio path.
         ota_cleanup(true);
         if (!s_adv_inhibit) esp_ble_gap_start_advertising(&s_adv_params);
@@ -681,6 +923,31 @@ static void gatts_cb(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if,
         } else if (param->write.handle == s_handles[IDX_OTADATA_VAL]) {
             // Write-without-response firmware chunk; no ack to send.
             ota_handle_data(param->write.value, param->write.len);
+        } else if (param->write.handle == s_handles[IDX_CMD_VAL]) {
+            // Console command line (AUTO_RSP: the stack already acked). Copy,
+            // trim trailing CR/LF/space, and hand to ble_cmd_task; running the
+            // command in this (Bluedroid) callback context is unsafe.
+            uint16_t n = param->write.len;
+            if (n > BLE_CMD_VAL_MAX) n = BLE_CMD_VAL_MAX;
+            char *line = malloc((size_t)n + 1);
+            if (line) {
+                memcpy(line, param->write.value, n);
+                line[n] = '\0';
+                while (n && (line[n-1] == '\n' || line[n-1] == '\r' || line[n-1] == ' '))
+                    line[--n] = '\0';
+                if (n == 0 || !s_cmd_q || xQueueSend(s_cmd_q, &line, 0) != pdTRUE) free(line);
+            }
+        } else if (param->write.handle == s_handles[IDX_LOG_CCCD]) {
+            if (param->write.len >= 2) {
+                s_log_notify_on = (param->write.value[0] & 0x01) != 0;
+                ESP_LOGI(TAG, "log notify %s", s_log_notify_on ? "subscribed" : "off");
+            }
+        } else if (param->write.handle == s_handles[IDX_SPEC_CCCD]) {
+            if (param->write.len >= 2) {
+                s_spec_notify_on = (param->write.value[0] & 0x01) != 0;
+                audio_pipeline_spectrum_enable(s_spec_notify_on);  // gate the FFT tap
+                ESP_LOGI(TAG, "spectrum %s", s_spec_notify_on ? "on" : "off");
+            }
         } else if (param->write.handle == s_handles[IDX_SETTINGS_CCCD]) {
             // CCCD is AUTO_RSP (stack stores the value + sends the ack); we only
             // read it to track whether to push notifications.
@@ -730,7 +997,26 @@ esp_err_t ble_config_init(void)
     if (err) { ESP_LOGE(TAG, "notify timer: %s", esp_err_to_name(err)); return err; }
     esp_timer_start_periodic(s_notify_timer, 750 * 1000);
 
-    ESP_LOGI(TAG, "BLE GATT config server init (settings + action chars)");
+    // BLE debug console: a LOG notify stream fed by an ESP_LOG vprintf hook, and
+    // a CMD write dispatched through the shared esp_console table. Additive to
+    // the UART console (the hook chains to the previous logger).
+    // Trigger level 1: wake the drain on any buffered byte. It reads up to a
+    // full notify payload per pass, so bursts still coalesce; small replies flush.
+    s_log_sb = xStreamBufferCreate(BLE_LOG_SB_SIZE, 1);
+    if (s_log_sb) {
+        xTaskCreate(ble_log_task, "ble_log", 3072, NULL, 5, &s_log_task);
+    } else {
+        ESP_LOGW(TAG, "LOG stream buffer alloc failed; BLE log disabled");
+    }
+    s_cmd_q = xQueueCreate(4, sizeof(char *));
+    if (s_cmd_q) xTaskCreate(ble_cmd_task, "ble_cmd", 4096, NULL, 5, NULL);
+    s_prev_vprintf = esp_log_set_vprintf(ble_log_vprintf);
+
+    // Audio spectrum notifier (gated on the SPECTRUM CCCD; idle otherwise). FFT
+    // scratch is static, so the stack stays small.
+    xTaskCreate(ble_spec_task, "ble_spec", 3072, NULL, 4, &s_spec_task);
+
+    ESP_LOGI(TAG, "BLE GATT config server init (settings + action + log/cmd chars)");
     return ESP_OK;
 }
 

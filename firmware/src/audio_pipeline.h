@@ -68,3 +68,23 @@ bool audio_pipeline_is_silent(void);
 // analysis). Captures verbatim with no level arming, so it works on the quiet noise
 // floor. The dump briefly stalls audio; debug/bench use.
 void audio_pipeline_capture(int samples);
+
+// ---- spectrum tap (BLE web visualizer) ------------------------------------
+// When enabled, the pipeline mirrors the post-DSP stereo program the user is
+// actually hearing into a ring buffer -- the local speaker/HP output, or the
+// Bluetooth output while a sink is streaming -- so a consumer can compute a live
+// spectrum that reflects EQ/volume/SFX. Enable only while a client is watching
+// (it costs a per-block copy). No-op in Mode A (pipeline parked).
+void audio_pipeline_spectrum_enable(bool on);
+
+// Which output the spectrum tap is currently mirroring: true = the Bluetooth
+// program (a sink is streaming), false = the local speaker/HP program.
+bool audio_pipeline_spectrum_is_bt(void);
+
+// Compute a stereo `nbins`-band log-spaced magnitude spectrum from the most recent
+// samples: per channel Hann window -> real FFT -> per-band peak -> dB, one 0..255
+// byte per band. Writes 2*nbins bytes: the left channel's bands first, then the
+// right (so `bins` must hold 2*nbins). Rough by design (a "cool" meter, not an
+// analyzer). Returns bytes written (2*nbins), or 0 if the tap is disabled. Call
+// from a non-realtime task -- it runs two FFTs -- never from the pipeline task.
+int  audio_pipeline_compute_spectrum(uint8_t *bins, int nbins);

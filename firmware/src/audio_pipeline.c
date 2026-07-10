@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/stream_buffer.h"
@@ -12,9 +13,15 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 
+#include "dsps_fft2r.h"     // spectrum tap: esp-dsp radix-2 FFT
+
 #include "i2s_codec.h"
 #include "dsp.h"
 #include "sfx.h"
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 static const char *TAG = "audio";
 
@@ -87,6 +94,23 @@ static audio_silence_cb_t s_silence_cb = NULL;
 static bool s_is_silent = false;
 static int  s_silent_window_count = 0;
 
+// ---- spectrum tap ---------------------------------------------------------
+// Per-channel rings of the newest post-DSP samples the user is hearing (the local
+// speaker/HP program, or the Bluetooth program while a sink streams). The pipeline
+// task fills them per block when enabled; audio_pipeline_compute_spectrum() (a
+// non-realtime caller) snapshots the last SPEC_FFT_N of each and FFTs them
+// independently for a stereo spectrum. Benign torn reads are fine for a
+// visualizer, so the rings are lock-free.
+#define SPEC_FFT_N    256                 // FFT window (5.8 ms at 44.1 kHz); small on
+                                          // purpose to keep DRAM free for BT + BLE
+#define SPEC_RING     512                 // >= SPEC_FFT_N, power of two
+#define SPEC_MAX_BINS 64                  // per channel
+static int16_t           s_spec_l[SPEC_RING];
+static int16_t           s_spec_r[SPEC_RING];
+static volatile uint32_t s_spec_wr    = 0;
+static volatile bool     s_spec_on    = false;
+static volatile bool     s_spec_is_bt = false;   // last tapped source: true=BT, false=local
+
 void audio_pipeline_set_silence_cb(audio_silence_cb_t cb)
 {
     s_silence_cb = cb;
@@ -96,6 +120,79 @@ void audio_pipeline_capture(int samples)
 {
     if (samples <= 0 || samples > WAVEDUMP_MAX) samples = WAVEDUMP_MAX;
     s_wd_request = samples;
+}
+
+void audio_pipeline_spectrum_enable(bool on)
+{
+    s_spec_on = on;
+}
+
+bool audio_pipeline_spectrum_is_bt(void)
+{
+    return s_spec_is_bt;
+}
+
+// FFT one channel's ring snapshot into `nbins` log-spaced 0..255 magnitude bytes.
+// `fft`/`hann` are caller-provided scratch/window (sized SPEC_FFT_N).
+static void spec_channel(const int16_t *ring, float *fft, const float *hann,
+                         uint8_t *out, int nbins)
+{
+    uint32_t start = s_spec_wr - SPEC_FFT_N;
+    for (int i = 0; i < SPEC_FFT_N; i++) {
+        float s = (float)ring[(start + i) & (SPEC_RING - 1)] * (1.0f / 32768.0f);
+        fft[2 * i]     = s * hann[i];
+        fft[2 * i + 1] = 0.0f;
+    }
+    dsps_fft2r_fc32(fft, SPEC_FFT_N);
+    dsps_bit_rev_fc32(fft, SPEC_FFT_N);
+
+    // Fold bins 1..N/2 into nbins log-spaced bands (peak power per band), then map
+    // dB to a 0..255 byte. Rough by design -- it's a "cool" meter, not analysis.
+    const int   kmax     = SPEC_FFT_N / 2;      // 256
+    const float FLOOR_DB = -60.0f;
+    for (int b = 0; b < nbins; b++) {
+        int lo = (int)floorf(powf((float)kmax, (float)b / nbins));
+        int hi = (int)floorf(powf((float)kmax, (float)(b + 1) / nbins));
+        if (lo < 1)    lo = 1;
+        if (hi <= lo)  hi = lo + 1;
+        if (hi > kmax) hi = kmax;
+        float peak = 0.0f;
+        for (int k = lo; k < hi; k++) {
+            float re = fft[2 * k], im = fft[2 * k + 1];
+            float p = re * re + im * im;        // power (magnitude^2)
+            if (p > peak) peak = p;
+        }
+        float norm = peak / ((float)kmax * (float)kmax);
+        float db   = 10.0f * log10f(norm + 1e-9f);   // 10*log10: norm is power
+        int   v    = (int)((db - FLOOR_DB) / (0.0f - FLOOR_DB) * 255.0f);
+        if (v < 0)   v = 0;
+        if (v > 255) v = 255;
+        out[b] = (uint8_t)v;
+    }
+}
+
+int audio_pipeline_compute_spectrum(uint8_t *bins, int nbins)
+{
+    if (!s_spec_on || !bins || nbins <= 0) return 0;
+    if (nbins > SPEC_MAX_BINS) nbins = SPEC_MAX_BINS;
+
+    static bool  s_ready = false;
+    static float s_hann[SPEC_FFT_N];
+    static float s_fft[SPEC_FFT_N * 2];         // reused L then R (sequential)
+    if (!s_ready) {
+        if (dsps_fft2r_init_fc32(NULL, SPEC_FFT_N) != ESP_OK) {
+            ESP_LOGW(TAG, "fft init failed; spectrum disabled");
+            s_spec_on = false;
+            return 0;
+        }
+        for (int i = 0; i < SPEC_FFT_N; i++)
+            s_hann[i] = 0.5f * (1.0f - cosf(2.0f * (float)M_PI * i / (SPEC_FFT_N - 1)));
+        s_ready = true;
+    }
+
+    spec_channel(s_spec_l, s_fft, s_hann, bins,         nbins);  // L bands
+    spec_channel(s_spec_r, s_fft, s_hann, bins + nbins, nbins);  // R bands
+    return 2 * nbins;
 }
 
 void audio_pipeline_set_bt_streaming(bool streaming)
@@ -264,6 +361,22 @@ static void pipeline_task(void *arg)
         // Local DSP: stereo speaker EQ, digital volume, SFX cue mix, saturate,
         // in place on the interleaved local buffer.
         dsp_process_local(local_buf, frames);
+
+        // Spectrum tap: mirror the *post-DSP* output the user is actually hearing
+        // into the rings so the web visualizer reflects live EQ/volume/SFX. Follow
+        // the active path: the Bluetooth program (out_buf, post BT DSP) while a sink
+        // is streaming, else the local speaker/HP program (local_buf, post local DSP).
+        if (s_spec_on) {
+            const int16_t *src = bt_streaming ? out_buf : local_buf;
+            s_spec_is_bt = bt_streaming;
+            uint32_t wr = s_spec_wr;
+            for (size_t i = 0; i < frames; i++) {
+                s_spec_l[wr & (SPEC_RING - 1)] = src[i * 2];
+                s_spec_r[wr & (SPEC_RING - 1)] = src[i * 2 + 1];
+                wr++;
+            }
+            s_spec_wr = wr;
+        }
 
         // Fan the processed program out to the ES8388 DAC in stereo (sample value
         // in bits 31:8 to match the ADC framing). The DAC drives the HP amp (true
