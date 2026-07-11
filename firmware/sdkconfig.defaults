@@ -61,3 +61,13 @@ CONFIG_ESP_INT_WDT_TIMEOUT_MS=2000
 
 # The per-second ADC peak log lives behind CONFIG_GBHIFI_DEBUG_PEAK_LOG, off by
 # default. Enable it in a local build when trimming gain or chasing clock drift.
+
+# Skip boot-time RF calibration and run from the NVS-stored calibration data.
+# The default partial calibration TXes through the radio inside esp_phy_enable
+# -- the single largest boot current spike. On a low battery (VIN ~2.4 V) that
+# spike sags the boost rail below the brownout threshold and the board
+# boot-loops at BT bring-up. Stored data is refreshed whenever a full cal runs
+# (first boot after flash erase), so steady-state RF performance is unchanged;
+# the trade is losing the per-boot temperature touch-up, fine at BT-headphone
+# range. main.c's brownout loop breaker is the backstop, not the fix.
+CONFIG_ESP_PHY_RF_CAL_NONE=y

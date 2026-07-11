@@ -187,12 +187,35 @@ codec misses during boot); this is gated so a future setting can disable it and
 let the GBA's own chime through. The audio pipeline and buttons start, and the
 pending OTA image is confirmed good.
 
-Only then is Bluetooth deferred: `app_main` waits until
-`CONFIG_GBHIFI_BT_START_DELAY_MS` after power-on before `bt_a2d_init()` (the
-controller + radio) and the BLE config server, so the radio's inrush current and
-RF noise land after the chime. Finally the factory-reset check, the state machine,
-and the console start. The order matters; read the comments in `main.c` before
-reordering anything.
+Only then comes Bluetooth, deliberately last among the heavy loads: `app_main`
+waits until `CONFIG_GBHIFI_BT_START_DELAY_MS` after power-on **and** until the
+startup chime has fully drained (`sfx_cue_active()`, capped so a wedged cue can't
+block BT), parks the speaker amp (`app_sm_amp_radio_quiet()`) across the radio
+window, then runs `bt_a2d_init()` (controller + radio) and the BLE config server.
+This serialization exists because the radio bring-up is the largest, fastest
+current step of the whole boot and on a low battery it can sag the boost rail
+below the brownout threshold (see PROTOTYPE-V1.0.md for the hardware analysis).
+Three more pieces of that fix live in firmware:
+
+- `CONFIG_ESP_PHY_RF_CAL_NONE=y` (sdkconfig.defaults) — skips the boot-time
+  partial RF calibration TX bursts and runs from NVS-stored cal data. This was
+  the decisive change; the sequencing alone didn't survive a 2.4 V rail. Caveat:
+  the first boot after an NVS erase runs a *full* cal (bigger spike), where the
+  loop breaker below is the safety net.
+- **BR/EDR TX capped at -3 dBm right after controller enable** (bt_a2d.c), so
+  inquiry/page bursts never run at the +9 dBm default; the CONNECTED handler
+  re-asserts the same level per link.
+- **Brownout loop breaker** (main.c): an RTC-noinit magic word is armed around
+  the radio bring-up and cleared on success. A boot that starts with reset
+  reason BROWNOUT while armed knows the radio killed it: the first strike
+  retries after a 2 s settle, two consecutive strikes skip BT for that boot and
+  come up LOCAL_ONLY (chime + local audio always play instead of a reboot
+  loop). A real power cycle scrambles RTC noinit and re-arms BT. All public
+  `bt_a2d_*` calls no-op safely on a BT-skipped boot.
+
+Verified on the bench cold-booting at 2.4 / 2.2 / 2.0 V. Finally the
+factory-reset check, the state machine, and the console start. The order
+matters; read the comments in `main.c` before reordering anything.
 
 There is no codec read-back verify pass. It existed for the noisy breadboard
 bring-up; the production PCB's series-R + short MCLK routing keep the I2C config
@@ -242,6 +265,7 @@ eqbt on|off [b m t]  Bluetooth EQ
 sfx on|off [level]   cue mixing
 chime [name]         play a synth cue
 play <name>          play a clip
+bt connect|pair      drive BT like the button (page bonds / inquiry-pair)
 mode a|b             set operating mode (a = bypass/battery, b = DSP)
 unplug stay|b        behavior on HP unplug in Mode A
 hold [c p m e]       R-button hold thresholds, ms

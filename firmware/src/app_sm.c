@@ -1286,6 +1286,27 @@ bool app_sm_hp_plugged(void)
     return s_hp_plugged;
 }
 
+void app_sm_request_bt_connect(void)
+{
+    if (!s_evq) { ESP_LOGW(TAG, "bt connect request before app_sm_start"); return; }
+    post(EV_BTN_CP_CONNECT);
+}
+
+void app_sm_request_bt_pair(void)
+{
+    if (!s_evq) { ESP_LOGW(TAG, "bt pair request before app_sm_start"); return; }
+    post(EV_BTN_CP_PAIR);
+}
+
+void app_sm_amp_radio_quiet(bool quiet)
+{
+    if (quiet) {
+        pam_set_unmuted(false);
+    } else {
+        pam_apply();   // back to the HP/state rule (pre-start: STANDBY + sampled HP)
+    }
+}
+
 esp_err_t app_sm_start(void)
 {
     pam_init();

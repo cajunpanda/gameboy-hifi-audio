@@ -212,6 +212,25 @@ static int cmd_outvol(int argc, char **argv)
 // transition (codec bypass/DSP + stop/restart the pipeline and I2S +
 // BT/route/amp handling). Persist with `save`. For a raw codec-only poke
 // without the orchestration, use `codecmode`.
+// `bt connect|pair`: drive the BT state machine from the console -- posts the
+// same events a Connect/Pair button hold releases, so bench tests can rebond or
+// re-page a sink without touching the physical button. (To silence the radio
+// instead, that's `radio off`.)
+static int cmd_bt(int argc, char **argv)
+{
+    if (argc != 2) { printf("usage: bt connect|pair\n"); return 1; }
+    if (strcmp(argv[1], "connect") == 0) {
+        app_sm_request_bt_connect();
+        printf("bt: connect requested (pages bonded sinks)\n");
+    } else if (strcmp(argv[1], "pair") == 0) {
+        app_sm_request_bt_pair();
+        printf("bt: pairing requested (inquiry for a new sink)\n");
+    } else {
+        printf("usage: bt connect|pair\n"); return 1;
+    }
+    return 0;
+}
+
 static int cmd_mode(int argc, char **argv)
 {
     if (argc != 2) { printf("usage: mode a|b  (a=analog bypass/battery, b=DSP)\n"); return 1; }
@@ -486,6 +505,7 @@ static void register_cmds(void)
         { .command = "play",  .help = "Play a clip: play <name>",                .func = cmd_play },
         { .command = "out1",  .help = "Tune headphone-amp level: out1 <0x00-0x21>", .func = cmd_out1 },
         { .command = "out2",  .help = "Tune speaker line-out level: out2 <0x00-0x21>", .func = cmd_out2 },
+        { .command = "bt",    .help = "Drive BT like the button: bt connect|pair", .func = cmd_bt },
         { .command = "mode",  .help = "Set operating mode (sticky): mode a|b (a=bypass/battery, b=DSP)", .func = cmd_mode },
         { .command = "codecmode", .help = "Raw codec poke (no orchestration): codecmode a|b", .func = cmd_codecmode },
         { .command = "unplug",.help = "On HP unplug in Mode A: unplug stay|b", .func = cmd_unplug },

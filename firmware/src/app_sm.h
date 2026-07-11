@@ -36,6 +36,24 @@ void app_sm_prime_volume(void);
 // after app_sm_speaker_early_on(); sm_task re-samples the live pin once it runs.
 bool app_sm_hp_plugged(void);
 
+// Boot-time radio-inrush mute window. `quiet=true` forces the speaker amp SD low
+// regardless of policy; `quiet=false` re-applies the normal HP/state rule. Used by
+// main.c around the BT controller enable: the radio's PHY-calibration current
+// spike plus a loud speaker peak can sag the boost rail below the brownout
+// threshold on a low battery, so the amp is parked for that window. Only
+// meaningful between app_sm_speaker_early_on() and app_sm_start() (later, the
+// state machine owns the pin and re-applies policy on its own events).
+void app_sm_amp_radio_quiet(bool quiet);
+
+// Bench/console: post the same state-machine events a Connect/Pair button hold
+// releases (connect zone / pair zone), so BT reconnect and pairing can be driven
+// from the serial or BLE console without touching the physical button. No-ops
+// (with a warning) before app_sm_start(). The state machine applies its normal
+// per-state rules, so e.g. a connect request in PAIRING is ignored just as a
+// button release would be.
+void app_sm_request_bt_connect(void);
+void app_sm_request_bt_pair(void);
+
 // Test/debug: force an immediate transition to DEEP_IDLE (ESP32 deep sleep) from
 // any awake state except PAIRING. Used by the `sleep` console command for
 // deep-sleep/wake reliability cycling. Wake sources are configured exactly as in

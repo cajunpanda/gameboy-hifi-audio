@@ -2,6 +2,7 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_attr.h"
 #include "driver/gpio.h"
 #include "driver/rtc_io.h"
 #include "esp_app_desc.h"
@@ -30,6 +31,39 @@
 #include "sfx.h"
 
 static const char *TAG = "gbhifi";
+
+// ---- BT brownout loop breaker ----------------------------------------------
+// Enabling the BT controller powers up the RF PHY and runs its calibration -- a
+// fast current spike the boost converter must ride through. On a low battery
+// (VIN near 2.4 V) the rail can dip below the brownout threshold, and because
+// the BOD fires at the same point every boot, the board loops forever. Arm a
+// magic word in RTC noinit RAM just before the radio comes up and clear it once
+// BT init returns: if a boot then starts with reset reason BROWNOUT while the
+// word is armed, the radio is what killed us. First such boot retries with an
+// extra settle; after BT_BOD_MAX_TRIES consecutive kills the boot skips BT
+// entirely, so the user gets chime + local audio instead of a reboot loop. RTC
+// noinit survives the BOD's software reset but scrambles on a real power-off,
+// so a battery change / power cycle re-arms BT automatically.
+#define BT_BOD_MAGIC      0x42D0B000u   // upper 24 bits magic, low 8 = attempt count
+#define BT_BOD_MAGIC_MASK 0xFFFFFF00u
+#define BT_BOD_MAX_TRIES  2
+static RTC_NOINIT_ATTR uint32_t s_bt_bod_guard;
+
+// How many consecutive boots the BT controller enable has brownout-reset us,
+// or 0 on a healthy boot. Reads the guard the *previous* boot armed, then
+// clears it, so a brownout anywhere OUTSIDE the armed radio window (e.g. mid
+// chime on a truly dead battery) isn't mis-attributed to the radio next boot.
+// Call once, early in app_main.
+static uint32_t bt_bod_kills(void)
+{
+    uint32_t kills = 0;
+    if (esp_reset_reason() == ESP_RST_BROWNOUT &&
+        (s_bt_bod_guard & BT_BOD_MAGIC_MASK) == BT_BOD_MAGIC) {
+        kills = s_bt_bod_guard & 0xFFu;
+    }
+    s_bt_bod_guard = 0;
+    return kills;
+}
 
 // Drain the ADC and feed the DAC one I2S block. Passed to es8388_init() so the
 // I2S DMA stays serviced during I2C config; an unserviced DMA storms the CPU and
@@ -134,6 +168,10 @@ static void ota_confirm_image_valid(void)
 void app_main(void)
 {
     ESP_LOGI(TAG, "GameBoy HiFi v%s booting", esp_app_get_description()->version);
+
+    // Read + clear the BT brownout guard first, before anything else can reset
+    // us, so the count only ever reflects BODs inside the armed radio window.
+    uint32_t bod_kills = bt_bod_kills();
 
     // Log the wake cause so the UART trace shows cold boot vs HP-plug (ext0) vs
     // R-button (ext1). The boot path is the same in all cases.
@@ -256,13 +294,50 @@ void app_main(void)
         vTaskDelay(pdMS_TO_TICKS(CONFIG_GBHIFI_BT_START_DELAY_MS - elapsed_ms));
     }
 
-    ESP_ERROR_CHECK(bt_a2d_init());
+    // ...then keep holding until the startup chime has fully drained. The fixed
+    // hold-off used to land the radio's PHY-calibration spike on top of the chime's
+    // final second at speaker volume -- the two loads together sag the boost rail
+    // below the brownout threshold on a low battery. Capped so a wedged cue can't
+    // block BT forever (chime is ~3.5 s and starts ~1 s in).
+    for (int i = 0; use_mod_chime && sfx_cue_active() && i < 100; i++) {
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+
+    if (bod_kills >= BT_BOD_MAX_TRIES) {
+        // The radio brownout-reset the last BT_BOD_MAX_TRIES boots in a row: the
+        // battery can't carry the PHY power-up. Come up local-only instead of
+        // boot-looping; the bt_a2d_* API is guarded to no-op un-inited. A real
+        // power cycle (battery change) scrambles RTC noinit and re-arms BT.
+        ESP_LOGE(TAG, "BT radio brownout-reset the last %" PRIu32 " boots -- battery "
+                 "too low for the radio, staying LOCAL-ONLY (power-cycle to retry)",
+                 bod_kills);
+    } else {
+        if (bod_kills > 0) {
+            // One strike: give the rail extra quiet time, then try once more.
+            ESP_LOGW(TAG, "last boot brownout-reset during BT radio init "
+                     "(attempt %" PRIu32 "/%d), retrying after settle",
+                     bod_kills, BT_BOD_MAX_TRIES);
+            vTaskDelay(pdMS_TO_TICKS(2000));
+        }
+
+        // Park the speaker amp for the radio bring-up window so the PHY spike is
+        // the only load transient on the boost; the chime is done (waited out
+        // above), so at most a sub-second gap in the live passthrough.
+        app_sm_amp_radio_quiet(true);
+        vTaskDelay(pdMS_TO_TICKS(250));   // let the amp/rail settle before the spike
+
+        s_bt_bod_guard = BT_BOD_MAGIC | (bod_kills + 1);
+        ESP_ERROR_CHECK(bt_a2d_init());
 
 #if CONFIG_GBHIFI_BLE_CONFIG
-    // BLE GATT config server alongside the A2DP source (controller in BTDM dual
-    // mode). Comes up after bt_a2d_init() since Bluedroid is enabled there.
-    ESP_ERROR_CHECK(ble_config_init());
+        // BLE GATT config server alongside the A2DP source (controller in BTDM dual
+        // mode). Comes up after bt_a2d_init() since Bluedroid is enabled there.
+        ESP_ERROR_CHECK(ble_config_init());
 #endif
+        s_bt_bod_guard = 0;   // radio survived: disarm the loop breaker
+
+        app_sm_amp_radio_quiet(false);
+    }
 
     // Factory reset before the state machine starts: Connect/Pair held from
     // power-on clears all bonds, dropping the next boot into pairing.

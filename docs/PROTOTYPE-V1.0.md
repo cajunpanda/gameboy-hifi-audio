@@ -193,6 +193,58 @@ diverged from the front panel); a full unit power-cycle (not just a USB replug)
 restored it and BT re-measured at 0.228 A. The other rows are consistent with
 prior bench observations.
 
+## Low-battery boot brownout at BT radio init (resolved in firmware, 2026-07-11)
+
+At a low battery voltage (bench: DPS-150 at 2.4 V into the GBA battery
+terminals) the board brownout-looped forever at boot, dying at the same log line
+every cycle: `phy_init: phy_version ...` -> `E BOD: Brownout detector was
+triggered`. That line is inside `esp_bt_controller_enable()`: the RF PHY's
+boot-time partial calibration fires TX bursts through the radio — the largest,
+fastest current step of the whole boot — and it landed while the startup chime
+was still playing at full wheel volume.
+
+**Why it only happens at low VIN.** The TPS61021A's 1.5 A @ 3.3 V (VIN > 1.8 V)
+rating is steady-state; a µs-scale load step is carried by the output caps until
+the control loop catches up, and the effective rail capacitance is small
+(C2 = 0603 6.3 V 22 µF derates to ~9 µF at 3.3 V bias; ~20 µF effective
+rail-wide). The gating fact: during a transient a boost's output can't fall
+below roughly VIN minus a body-diode drop. At VIN 3.2 V that floor (~2.8 V) is
+*above* the ESP32's brownout threshold (level 0, ~2.43 V — already the lowest
+setting), so BOD is physically unreachable; at VIN 2.4 V the floor (~2.0 V) is
+below it, and a deep-enough transient trips it. Raising the bench current limit
+1 A -> 3 A changed nothing (it is not supply foldback), and the supply reads a
+steady 2.400 V CV throughout — a 20 Hz sample never sees the sub-ms dip.
+
+Resolved in firmware (RF-cal skip, load serialization, TX cap, brownout loop
+breaker — see FIRMWARE.md "Init order") and verified cold-booting cleanly at
+2.4 / 2.2 / 2.0 V; 2.0 V is below any usable 2xAA level, the GBA console itself
+gives out first. Bench notes: phantom power must be killed for a true cold boot
+(`tools/bringup.py --kill-phantom`), and the onboard `batt` reading sits ~56 mV
+under the DPS setpoint (lead + FPC drop), e.g. 2344 mV at a 2.4 V setpoint.
+
+### Suggested hardware changes (next board revision)
+
+The firmware fix removes the trigger, but the underlying transient margin is
+thin. For the next rev, in rough order of value:
+
+1. **More *effective* bulk on VBOOST / +3V3.** C2 (22 µF, 0603, 6.3 V X5R,
+   CL10A226MQ8NRNC) is ~9 µF at 3.3 V bias. Swap to a 10 V-rated 0805 22 µF
+   (halves the derating) and/or add a dedicated bulk cap at U3 VOUT — a 6.3 V
+   100–220 µF polymer (or two more 22 µF ceramics) targeting >= 50 µF effective.
+   Every µF directly extends how long the rail rides through a load step.
+2. **Bulk at the PAM8302A supply pin.** The amp shares +3V3 with the ESP32;
+   full-scale speaker peaks are hundreds of mA and coincide with whatever else
+   the rail is doing. A local 22–47 µF (10 V rated) at U4 VDD decouples speaker
+   program peaks from the ESP32's BOD sense point.
+3. **Verify L1 saturation headroom.** L1 (0.47 µH, WIP252012P-R47ML, 2520) must
+   not saturate below the TPS61021A's ~4.6 A peak switch limit; if its Isat is
+   below that, the converter loses its rated transient capability exactly when
+   it's needed. If marginal, move to a 0.47 µH part with Isat >= 4.5 A.
+4. **More input bulk on VBAT at the board.** VBAT arrives over two FPC pins plus
+   the battery-terminal wiring; the input transient (boost input current exceeds
+   1.5x output current at 2.4 V in) sees all of that resistance. C1 is a single
+   derated 22 µF; a second 22 µF (or one 47 µF, 10 V) at U3 VIN stiffens it.
+
 ## Boot latency and the startup chime
 
 The mod boots on the GBA's switched rail, so the Game Boy power-on chime is the

@@ -221,11 +221,20 @@ static void handle_inquiry_result(esp_bt_gap_cb_param_t *p)
              have_name ? "  name=" : "",
              have_name ? name : "");
 
-    // Match any device advertising the rendering service (A2DP sink). No
-    // name filter: consent comes from the user explicitly entering pairing
-    // mode, and the first audio sink to answer the inquiry wins.
+    // Match dedicated audio hardware: major device class Audio/Video AND an
+    // audio-ish service bit (Rendering or Audio). No name filter: consent comes
+    // from the user explicitly entering pairing mode, and the first matching
+    // sink to answer the inquiry wins.
+    //
+    // Both halves matter. Rendering-service alone also matches discoverable
+    // computers (a bench laptop, CoD 0x6c010c, major class Computer, sits there
+    // winning every inquiry and rejecting auth). And Rendering alone MISSES
+    // some real speakers: a bench BT loudspeaker advertises CoD 0x280424 --
+    // major AV, minor loudspeaker, services Audio+Capturing, no Rendering bit.
     if (!esp_bt_gap_is_valid_cod(cod) ||
-        !(esp_bt_gap_get_cod_srvc(cod) & ESP_BT_COD_SRVC_RENDERING)) {
+        esp_bt_gap_get_cod_major_dev(cod) != ESP_BT_COD_MAJOR_DEV_AV ||
+        !(esp_bt_gap_get_cod_srvc(cod) &
+          (ESP_BT_COD_SRVC_RENDERING | ESP_BT_COD_SRVC_AUDIO))) {
         return;
     }
 
@@ -397,6 +406,7 @@ static void a2d_cb(esp_a2d_cb_event_t event, esp_a2d_cb_param_t *param)
 
 esp_err_t bt_a2d_connect_bonded(void)
 {
+    if (!s_inited) return ESP_ERR_INVALID_STATE;   // BT skipped this boot (low battery)
     // Guard against re-entering connect while a previous page is still in
     // flight. Bluedroid can panic with StoreProhibited if
     // esp_a2d_source_connect() is called back-to-back without the prior
@@ -454,6 +464,7 @@ esp_err_t bt_a2d_connect_bonded(void)
 
 esp_err_t bt_a2d_start_pairing(void)
 {
+    if (!s_inited) return ESP_ERR_INVALID_STATE;   // BT skipped this boot (low battery)
     if (s_radio_off) return ESP_OK;   // radio silenced for a bench measurement
     ESP_LOGI(TAG, "*** entering pairing mode (inquiry) ***");
     memset(s_peer_bda, 0, sizeof(s_peer_bda));
@@ -478,11 +489,13 @@ void bt_a2d_set_radio(bool on)
 
 bool bt_a2d_has_bond(void)
 {
+    if (!s_inited) return false;   // BT skipped this boot (low battery)
     return esp_bt_gap_get_bond_device_num() > 0;
 }
 
 esp_err_t bt_a2d_clear_bonds(void)
 {
+    if (!s_inited) return ESP_ERR_INVALID_STATE;   // BT skipped this boot (low battery)
     // Remove every bond. The list API caps at MAX_BONDED per call, so loop
     // and re-query until the controller reports none left (bounded so a
     // misbehaving stack can't spin forever).
@@ -514,6 +527,7 @@ esp_err_t bt_a2d_clear_bonds(void)
 
 esp_err_t bt_a2d_disconnect(void)
 {
+    if (!s_inited) return ESP_OK;   // BT skipped this boot: nothing to tear down
     if (s_link_state == LINK_DISCOVERING) {
         // Abort the inquiry AND neutralize the trailing DISCOVERY_STOPPED
         // callback: clear the discovering state so gap_cb won't page a sink that
@@ -531,6 +545,7 @@ esp_err_t bt_a2d_disconnect(void)
 
 esp_err_t bt_a2d_media_start(void)
 {
+    if (!s_inited) return ESP_ERR_INVALID_STATE;   // BT skipped this boot (low battery)
     if (s_link_state != LINK_CONNECTED) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -544,6 +559,7 @@ esp_err_t bt_a2d_media_start(void)
 
 esp_err_t bt_a2d_media_suspend(void)
 {
+    if (!s_inited) return ESP_OK;   // BT skipped this boot: nothing streaming
     if (s_media_state != MEDIA_STARTED) {
         return ESP_OK;
     }
@@ -594,6 +610,16 @@ esp_err_t bt_a2d_init(void)
     ESP_ERROR_CHECK(esp_bt_controller_init(&bt_cfg));
     ESP_ERROR_CHECK(esp_bt_controller_enable(ESP_BT_MODE_CLASSIC_BT));
 #endif
+
+    // Cap BR/EDR TX at -3 dBm from the first RF activity. The controller
+    // defaults to +9 dBm, so without this the boot-time inquiry/page bursts
+    // run at full power -- enough extra load to brown out the boost converter
+    // on a low battery. -3 dBm is plenty for a headphone within a meter; the
+    // CONNECTED handler re-asserts the same level per link.
+    esp_err_t pe = esp_bredr_tx_power_set(ESP_PWR_LVL_N3, ESP_PWR_LVL_N3);
+    if (pe != ESP_OK) {
+        ESP_LOGW(TAG, "boot tx_power_set: %s", esp_err_to_name(pe));
+    }
 
     // Controller-level modem sleep. sdkconfig pins this to
     // MODEM_SLEEP_MODE_ORIG with the main XTAL as the low-power clock.
