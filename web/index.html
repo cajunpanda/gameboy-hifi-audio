@@ -695,9 +695,9 @@
               (low power, longer playtime). Switch by holding the <b>R button</b> on the console until the third
               chime, then releasing.</p>
             <div class="row" style="margin-top:0.9rem">
-              <label>Switch to Full mode when headphones are unplugged
-                <span class="sub">Otherwise the speaker stays in battery saver</span></label>
-              <input type="checkbox" class="sw" id="unplugToB" aria-label="Switch to Full mode on unplug">
+              <label>Stay in Battery saver after power off
+                <span class="sub">Off: the mod always powers on in Full mode. Hold the R button while powering on to skip Battery saver for one boot.</span></label>
+              <input type="checkbox" class="sw" id="bootModeA" aria-label="Stay in Battery saver after power off">
             </div>
           </div>
 
@@ -801,7 +801,7 @@ const banner = (m) => { const b = $('banner'); b.textContent = m; b.classList.ad
 // Settings blob, little-endian, byte offsets:
 //   [0..1] version u16 [2] spkVol [3] btVol [4] eqEn [5..7] eq i8 x3
 //   [8] eqBtEn [9..11] eqBt i8 x3 [12] sfxEn [13] sfxLevel i8
-//   [14] modeA (read-only status) [15] unplugToB
+//   [14] modeA (read-only status) [15] bootModeA (persist Mode A across power cycles)
 //   [16..17] holdConnect u16 [18..19] holdPair u16 [20..21] holdMode u16 [22..23] holdExit u16
 //   [24] eqHpEn [25..27] eqHp i8 x3 (headphone EQ)
 const FIELDS = [   // writable u8 ('u') / i8 ('i') / bool ('b')
@@ -810,7 +810,7 @@ const FIELDS = [   // writable u8 ('u') / i8 ('i') / bool ('b')
   ['eqHpEn',24,'b'], ['eqHpBass',25,'i'], ['eqHpMid',26,'i'], ['eqHpTreble',27,'i'],
   ['eqBtEn',8,'b'], ['eqBtBass',9,'i'], ['eqBtMid',10,'i'], ['eqBtTreble',11,'i'],
   ['sfxEn',12,'b'], ['sfxLevel',13,'i'],
-  ['unplugToB',15,'b'],
+  ['bootModeA',15,'b'],
 ];
 const HOLD_FIELDS = [   // writable u16 ('h')
   ['holdConnect',16], ['holdPair',18], ['holdMode',20], ['holdExit',22],

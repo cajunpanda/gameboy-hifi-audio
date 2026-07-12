@@ -343,14 +343,16 @@ menu "GameBoy HiFi Audio"
                 the full Mode-B path first (the codec needs live MCLK once to
                 configure), then transitions to Mode A if this is set.
 
-        config GBHIFI_UNPLUG_TO_B
-            bool "On wired-HP unplug in Mode A, switch to Mode B"
-            default n
+        config GBHIFI_BOOT_MODE_A
+            bool "Persist Mode A across power cycles"
+            default y
             help
-                Behavior when wired headphones are pulled while in Mode A.
-                OFF = stay in Mode A (the speaker keeps running in battery
-                mode, symmetric with insertion). ON = switch to Mode B so the
-                speaker gets the full DSP path.
+                Whether the Mode A/B preference survives a power cycle. ON
+                (default) = sticky: if powered off in Mode A, boot back into
+                Mode A after the startup chime window (unless the CP button is
+                held at power-on, or the `bootb` console command cancels it).
+                OFF = Mode A is session-only: every boot comes up in Mode B
+                local regardless of how it was powered off.
 
         config GBHIFI_AUTO_CONNECT
             bool "Auto-connect Bluetooth on boot"
