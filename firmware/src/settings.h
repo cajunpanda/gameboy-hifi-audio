@@ -17,7 +17,7 @@
 // "dsp"). Bump GBHIFI_SETTINGS_VERSION when the struct layout changes; an
 // older/absent blob falls back to the Kconfig-seeded defaults.
 
-#define GBHIFI_SETTINGS_VERSION 9
+#define GBHIFI_SETTINGS_VERSION 10
 
 typedef struct {
     uint16_t version;          // == GBHIFI_SETTINGS_VERSION
@@ -73,9 +73,12 @@ typedef struct {
     //   false = Mode B (full DSP: EQ/SFX/volume + A2DP, ES8388 ADC to DAC)
     //   true  = Mode A (analog bypass: ES8388 LIN to outputs, digital path stopped)
     bool     mode_a;
-    // On a wired-HP unplug while in Mode A: false = stay in Mode A (speaker in
-    // battery mode); true = switch to Mode B (speaker uses full DSP).
-    bool     unplug_to_b;
+    // Whether the Mode A/B preference (mode_a) survives a power cycle. true
+    // (default) = sticky: if powered off in Mode A, boot back into Mode A (after
+    // the startup chime window, unless the CP button is held at power-on or the
+    // `bootb` console command cancels it). false = Mode A is session-only: every
+    // boot comes up in Mode B local regardless of how it was powered off.
+    bool     boot_mode_a;
     // Bluetooth connect-on-boot policy. false (default) = manual: the radio comes
     // up idle and the device waits in LOCAL_ONLY; no page/inquiry happens until
     // the user holds the Connect/Pair (R) button to start it. true = auto: on
@@ -124,7 +127,7 @@ esp_err_t settings_set_nr(uint16_t hpf_hz, uint16_t lpf_hz, uint16_t notch_hz,
                           uint8_t notch_q);
 esp_err_t settings_set_nr_gate(int8_t thresh_db, uint8_t range_db);
 esp_err_t settings_set_mode_a(bool mode_a);
-esp_err_t settings_set_unplug_to_b(bool unplug_to_b);
+esp_err_t settings_set_boot_mode_a(bool boot_mode_a);
 esp_err_t settings_set_auto_connect(bool auto_connect);
 // Set the R-button hold-menu thresholds (ms). Clamped + re-ordered so
 // connect <= pair <= mode (sanitise()). mode_exit is independent.

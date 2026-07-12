@@ -93,7 +93,7 @@ static const uint8_t SPEC_UUID128[16] = {
 //   [4] eq_en [5] eq_bass [6] eq_mid [7] eq_treble (i8)  Speaker EQ
 //   [8] eq_bt_en [9] eq_bt_bass [10] eq_bt_mid [11] eq_bt_treble (i8)  Bluetooth EQ
 //   [12] sfx_en [13] sfx_level (i8)
-//   [14] mode_a (1=bypass; READ-ONLY status, writes ignored) [15] unplug_to_b
+//   [14] mode_a (1=bypass; READ-ONLY status, writes ignored) [15] boot_mode_a
 //   [16..17] hold_connect_ms u16  [18..19] hold_pair_ms u16
 //   [20..21] hold_mode_ms u16     [22..23] hold_mode_exit_ms u16
 //   [24] eq_hp_en [25] eq_hp_bass [26] eq_hp_mid [27] eq_hp_treble (i8)  Headphone EQ
@@ -340,7 +340,7 @@ static void settings_to_wire(uint8_t *b)
     b[12] = s.sfx_enabled ? 1 : 0;
     b[13] = (uint8_t)s.sfx_level_db;
     b[14] = s.mode_a ? 1 : 0;
-    b[15] = s.unplug_to_b ? 1 : 0;
+    b[15] = s.boot_mode_a ? 1 : 0;
     b[16] = (uint8_t)(s.hold_connect_ms   & 0xff);
     b[17] = (uint8_t)(s.hold_connect_ms   >> 8);
     b[18] = (uint8_t)(s.hold_pair_ms      & 0xff);
@@ -372,7 +372,7 @@ static void wire_to_settings(const uint8_t *b)
     settings_set_hp_eq(b[24] != 0, (int8_t)b[25], (int8_t)b[26], (int8_t)b[27]);
     settings_set_bt_eq(b[8] != 0, (int8_t)b[9], (int8_t)b[10], (int8_t)b[11]);
     settings_set_sfx(b[12] != 0, (int8_t)b[13]);
-    settings_set_unplug_to_b(b[15] != 0);
+    settings_set_boot_mode_a(b[15] != 0);
     settings_set_hold_timings((uint16_t)(b[16] | (b[17] << 8)),
                               (uint16_t)(b[18] | (b[19] << 8)),
                               (uint16_t)(b[20] | (b[21] << 8)),

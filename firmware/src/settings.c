@@ -23,8 +23,8 @@ static const char *TAG = "settings";
 #ifndef CONFIG_GBHIFI_DEFAULT_MODE_A
 #define CONFIG_GBHIFI_DEFAULT_MODE_A 0
 #endif
-#ifndef CONFIG_GBHIFI_UNPLUG_TO_B
-#define CONFIG_GBHIFI_UNPLUG_TO_B 0
+#ifndef CONFIG_GBHIFI_BOOT_MODE_A
+#define CONFIG_GBHIFI_BOOT_MODE_A 1
 #endif
 #ifndef CONFIG_GBHIFI_AUTO_CONNECT
 #define CONFIG_GBHIFI_AUTO_CONNECT 0
@@ -80,7 +80,7 @@ static const gbhifi_settings_t s_defaults = {
     .nr_gate_thresh_db = CONFIG_GBHIFI_DSP_NR_GATE_THRESH_DB,
     .nr_gate_range_db  = CONFIG_GBHIFI_DSP_NR_GATE_RANGE_DB,
     .mode_a          = CONFIG_GBHIFI_DEFAULT_MODE_A,
-    .unplug_to_b     = CONFIG_GBHIFI_UNPLUG_TO_B,
+    .boot_mode_a     = CONFIG_GBHIFI_BOOT_MODE_A,
     .auto_connect    = CONFIG_GBHIFI_AUTO_CONNECT,
     // Absolute hold thresholds: connect at CONNECT_HOLD_MS, pair + PAIR_EXTRA_MS
     // beyond that, mode + MODE_EXTRA_MS beyond pair.
@@ -163,8 +163,8 @@ esp_err_t settings_init(void)
              s_cur.eq_bt_enabled,
              s_cur.eq_bt_bass_db, s_cur.eq_bt_mid_db, s_cur.eq_bt_treble_db,
              s_cur.sfx_enabled, s_cur.sfx_level_db);
-    ESP_LOGI(TAG, "mode=%c unplug_to_B=%d auto_connect=%d hold[con/pair/mode/exit]=%u/%u/%u/%u ms",
-             s_cur.mode_a ? 'A' : 'B', s_cur.unplug_to_b, s_cur.auto_connect,
+    ESP_LOGI(TAG, "mode=%c boot_mode_a=%d auto_connect=%d hold[con/pair/mode/exit]=%u/%u/%u/%u ms",
+             s_cur.mode_a ? 'A' : 'B', s_cur.boot_mode_a, s_cur.auto_connect,
              s_cur.hold_connect_ms, s_cur.hold_pair_ms,
              s_cur.hold_mode_ms, s_cur.hold_mode_exit_ms);
     return ESP_OK;
@@ -288,11 +288,11 @@ esp_err_t settings_set_mode_a(bool mode_a)
     return ESP_OK;
 }
 
-esp_err_t settings_set_unplug_to_b(bool unplug_to_b)
+esp_err_t settings_set_boot_mode_a(bool boot_mode_a)
 {
     if (!s_lock) return ESP_ERR_INVALID_STATE;
     xSemaphoreTake(s_lock, portMAX_DELAY);
-    s_cur.unplug_to_b = unplug_to_b;
+    s_cur.boot_mode_a = boot_mode_a;
     s_generation++;
     xSemaphoreGive(s_lock);
     return ESP_OK;

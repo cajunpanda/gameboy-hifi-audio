@@ -193,6 +193,73 @@ diverged from the front panel); a full unit power-cycle (not just a USB replug)
 restored it and BT re-measured at 0.228 A. The other rows are consistent with
 prior bench observations.
 
+### Update 2026-07-12: with a HiSpeedido v5 IPS screen
+
+Re-measured on a unit fitted with a **HiSpeedido v5 IPS** screen mod (same DPS-150
+at 3.2 V), this time with the GBA running live game audio rather than the 1 kHz
+test tone. Total rail current = GBA console + IPS screen + mod board; the mod was
+isolated for the baseline by holding the ESP32 in reset (EN low). **The IPS
+backlight was at full brightness (level 15 of 15)** for every figure in the table
+below.
+
+| Operating point | I @ 3.2 V | P | Δ vs IPS baseline |
+|---|---|---|---|
+| GBA + IPS baseline (ESP32 held in reset) | 0.263 A | 0.84 W | — |
+| Mode A (bypass, light-sleep) speaker 100 % | 0.288 A | 0.92 W | +25 mA |
+| Mode B (DSP) speaker 100 % | 0.311 A | 0.99 W | +47 mA |
+| Bluetooth A2DP streaming to a sink | 0.404 A | 1.29 W | +141 mA |
+
+- **The IPS screen is the single biggest load.** It adds ~167 mA over the bare
+  console (0.263 A here vs the 0.096 A bare-GBA baseline above) — more than any
+  mod mode. On an IPS-modded unit the backlight dominates the power budget.
+- Mode ordering holds: **Mode A < Mode B < Bluetooth**. The mod's own overhead is
+  ~+25 mA (Mode A), ~+47 mA (Mode B: ~38 mA DSP + light speaker drive), and
+  ~+141 mA (BT: ~38 mA DSP + ~100 mA SBC encode + BR/EDR radio at -3 dBm).
+- This run used **live game audio** (vs the 1 kHz tone in the table above), so the
+  speaker-drive component varies with content — per-mode figures carry ±10-30 mA
+  against the tone table, while the digital-core deltas match.
+- **Backlight brightness is a large, independent lever.** Dropping the IPS from full
+  (level 15) to half (level 8) takes the baseline from 0.263 A to **0.216 A** — a
+  ~47 mA saving, as much as the entire Mode B DSP overhead. Every GBA + IPS figure
+  scales down ~47 mA at half brightness, so runtime improves accordingly (baseline
+  7.6 h -> ~9.3 h; Bluetooth streaming 4.9 h -> ~5.6 h). Turning the backlight down
+  is the single most effective battery-life lever on an IPS unit.
+
+### Battery life estimate (2x AA alkaline)
+
+The two AA cells power the GBA in **series** (~3.0 V fresh), so both carry the same
+current and the pack's usable capacity equals one cell's (series adds voltage, not
+capacity). Runtime is then just:
+
+    runtime (h) = usable capacity (mAh) / rail current (mA)
+
+Assuming **~2000 mAh** usable for AA alkaline at these drains down to the GBA's
+brownout (~2.0 V pack). This is deliberately conservative — light loads realistically
+reach ~2400 mAh; scale linearly for other cells (e.g. 2500 mAh multiplies every
+figure by 1.25).
+
+| Operating point | Bare GBA | GBA + IPS |
+|---|---|---|
+| Baseline (mod idle / held in reset) | 96 mA -> **20.8 h** | 263 mA -> **7.6 h** |
+| Mode A speaker, 100 % volume | 148 mA -> **13.5 h** | 288 mA -> **6.9 h** |
+| Mode B speaker, 100 % volume | 157 mA -> **12.7 h** | 311 mA -> **6.4 h** |
+| Bluetooth streaming to a sink | 228 mA -> **8.8 h** | 404 mA -> **4.9 h** |
+
+Bare-GBA column uses the 2026-07-09 tone figures; GBA + IPS column uses the
+2026-07-12 live-audio figures. The headline: **the IPS screen roughly halves
+runtime in every mode** — it, not the audio mod, is the dominant battery cost. With
+the mod streaming Bluetooth on an IPS unit, expect ~5 hours from a fresh pair of AAs.
+
+These are **charge-based** (capacity / fresh-battery current) and so run slightly
+optimistic: the GBA + IPS load sits on the raw battery rail (~constant current, so
+`Q/I` holds), but the mod board runs off the U3 TPS61021A **boost** — a constant-power
+load whose input current climbs ~30 % as the cells sag from ~3.2 V to ~2.0 V. The
+real hit is ~10-17 % on the Bluetooth rows (largest boosted fraction), less in Mode
+A/B, and negligible at baseline — and it partly cancels against the conservative
+2000 mAh assumption (realistic alkaline delivers ~2400 mAh at these drains). An exact
+figure needs an energy (Wh) model with the boost efficiency curve; for planning these
+are fine.
+
 ## Low-battery boot brownout at BT radio init (resolved in firmware, 2026-07-11)
 
 At a low battery voltage (bench: DPS-150 at 2.4 V into the GBA battery
