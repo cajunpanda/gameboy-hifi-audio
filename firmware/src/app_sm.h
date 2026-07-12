@@ -60,6 +60,15 @@ void app_sm_request_bt_pair(void);
 // a normal DEEP_IDLE entry: R-button (EXT1, held) or an HP-detect edge (EXT0).
 void app_sm_request_sleep(void);
 
+// Switch operating mode by rebooting into it (Mode A boots BT-less for power +
+// reliability; Mode B boots with the radio). Persists the mode, then esp_restart().
+// Does not return. No-op if already in the requested mode.
+void app_sm_switch_mode(bool to_mode_a);
+
+// Hand app_sm the boot-mode decision main.c already made (so it drops into the
+// same mode it skipped/kept BT init for). Call before app_sm_start().
+void app_sm_set_boot_into_mode_a(bool v);
+
 // Enable/disable the VOL-wheel poll driving volume (GPIO39 ADC). The mode-change
 // poll still runs either way; this only gates whether the wheel reading is
 // applied to volume. Defaults ON: the wheel is the GBA's physical volume control.

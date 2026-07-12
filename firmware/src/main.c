@@ -266,9 +266,29 @@ void app_main(void)
     // -- which is simply this block NOT running (the passthrough already carries the
     // real chime). Both calls run before audio_pipeline_start(), i.e. before the
     // audio task exists, so the passthrough is muted from its first block.
+    // Voice the startup chime only on a genuine power cycle. Every other reset --
+    // a Mode A/B change reboot (esp_restart, ESP_RST_SW), a watchdog, a brownout --
+    // re-runs this boot path but should be silent: the user didn't power the console
+    // on, and (for a mode-change reboot) the GBA never lost power, so the muted-
+    // passthrough intro would just swallow the live game audio for no reason.
     gbhifi_settings_t boot_s;
     settings_get(&boot_s);
-    bool use_mod_chime = boot_s.sfx_enabled;   // future: && boot_s.startup_chime
+    bool power_on = (esp_reset_reason() == ESP_RST_POWERON);
+    // Boot-mode decision (made once, gates BT init + the chime, handed to app_sm). A
+    // Mode A boot keeps the radio off (battery mode + clean light sleep) and drops
+    // STRAIGHT into Mode A -- no chime, no pause. A real power cycle consults the
+    // persist flag; a mode-change reboot (SW reset) always lands in the saved mode.
+    // Holding CP (R) at power-on forces Mode B -- the only Mode A boot escape.
+    bool cp_held = (gpio_get_level(PIN_CP_BUTTON) == 0);   // active LOW
+    bool boot_mode_a = boot_s.mode_a && !cp_held &&
+                       (!power_on || boot_s.boot_mode_a);
+    app_sm_set_boot_into_mode_a(boot_mode_a);
+    if (boot_mode_a) {
+        ESP_LOGI(TAG, "Mode A boot: skipping BT init + chime (BT-less battery mode)");
+    }
+    // Voice the startup chime only on a genuine power cycle into Mode B. Any other
+    // reset (mode-change reboot, watchdog, brownout) re-runs this boot path silently.
+    bool use_mod_chime = boot_s.sfx_enabled && power_on && !boot_mode_a;
     if (use_mod_chime) {
         dsp_begin_intro();
         sfx_trigger_clip("startup");
@@ -284,23 +304,28 @@ void app_main(void)
     // during that window roll back an otherwise-good image.
     ota_confirm_image_valid();
 
+    // A Mode A boot keeps the radio off entirely -- battery mode plus a clean,
+    // conflict-free light-sleep loop -- so skip the whole BT bring-up below. Mode B
+    // (and the Mode A escape window, which runs in Mode B local) bring the radio up.
+    if (!boot_mode_a) {
     // Defer the Bluetooth controller + radio until CONFIG_GBHIFI_BT_START_DELAY_MS
-    // after power-on. The audio path above is already streaming, so the chime plays
-    // clean before the radio's inrush current + RF noise land. Measured from boot
-    // (esp_timer counts from chip start), so the hold-off shrinks by however long
-    // the audio bring-up already took.
-    int64_t elapsed_ms = esp_timer_get_time() / 1000;
-    if (elapsed_ms < CONFIG_GBHIFI_BT_START_DELAY_MS) {
-        vTaskDelay(pdMS_TO_TICKS(CONFIG_GBHIFI_BT_START_DELAY_MS - elapsed_ms));
-    }
-
-    // ...then keep holding until the startup chime has fully drained. The fixed
-    // hold-off used to land the radio's PHY-calibration spike on top of the chime's
-    // final second at speaker volume -- the two loads together sag the boost rail
-    // below the brownout threshold on a low battery. Capped so a wedged cue can't
-    // block BT forever (chime is ~3.5 s and starts ~1 s in).
-    for (int i = 0; use_mod_chime && sfx_cue_active() && i < 100; i++) {
-        vTaskDelay(pdMS_TO_TICKS(50));
+    // after power-on, but ONLY when the startup chime is playing: the whole point of
+    // the hold-off is to let the chime finish before the radio's inrush + PHY spike
+    // land (they'd otherwise sag the boost rail under the chime's peak). A silent
+    // reboot (mode change / watchdog) has no chime, so the delay is pure dead time
+    // that shows up as an audible gap before Mode B audio fully comes up -- skip it
+    // and bring BT + app_sm (final routing) up immediately.
+    if (use_mod_chime) {
+        int64_t elapsed_ms = esp_timer_get_time() / 1000;
+        if (elapsed_ms < CONFIG_GBHIFI_BT_START_DELAY_MS) {
+            vTaskDelay(pdMS_TO_TICKS(CONFIG_GBHIFI_BT_START_DELAY_MS - elapsed_ms));
+        }
+        // ...then keep holding until the startup chime has fully drained, so the
+        // PHY-calibration spike doesn't land on the chime's final second. Capped so
+        // a wedged cue can't block BT forever (chime is ~3.5 s, starts ~1 s in).
+        for (int i = 0; sfx_cue_active() && i < 100; i++) {
+            vTaskDelay(pdMS_TO_TICKS(50));
+        }
     }
 
     if (bod_kills >= BT_BOD_MAX_TRIES) {
@@ -338,6 +363,7 @@ void app_main(void)
 
         app_sm_amp_radio_quiet(false);
     }
+    }   // end if (!boot_mode_a)
 
     // Factory reset before the state machine starts: Connect/Pair held from
     // power-on clears all bonds, dropping the next boot into pairing.

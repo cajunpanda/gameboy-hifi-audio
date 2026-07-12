@@ -29,7 +29,9 @@
 
 #include "driver/gpio.h"
 #include "esp_log.h"
+#include "esp_rom_serial_output.h"
 #include "esp_sleep.h"
+#include "esp_system.h"
 #include "esp_timer.h"
 
 static const char *TAG = "app_sm";
@@ -126,6 +128,9 @@ static TimerHandle_t s_standby_to_t = NULL;  // 30 s STANDBY give-up timer
 static TimerHandle_t s_reconnect_t  = NULL;  // 5 s STANDBY reconnect retry
 static TimerHandle_t s_pairing_to_t = NULL;  // pairing-mode session give-up
 static TimerHandle_t s_poll_t       = NULL;  // ~200 ms VOL-wheel + mode-change poll (awake states)
+// Boot-mode decision handed down from main.c (settings + reset reason + CP-hold);
+// true means drop straight into Mode A at boot (main.c also skipped BT init for it).
+static bool          s_boot_into_mode_a = false;
 
 static app_state_t s_state = ST_STANDBY;
 
@@ -970,6 +975,29 @@ static void mode_a_run(void)
 {
     ESP_LOGI(TAG, "Mode A: light-sleep duty loop (poll %d ms; R-hold to exit)",
              MODE_A_POLL_MS);
+
+    // The project runs the PM framework (CONFIG_PM_ENABLE) with automatic light
+    // sleep OFF, so Mode A must hand-roll esp_light_sleep_start(). A manual sleep
+    // ignores PM locks, so we have to make the peripherals safe ourselves:
+    //
+    //  1. BT: enter(ST_MODE_A) already called bt_a2d_disconnect(), but that only
+    //     *starts* the teardown; the ACL disconnect completes asynchronously on
+    //     the BT work-task, which can't run while we're asleep. Sleeping on a live
+    //     ACL hangs the sleep transition and the RTC watchdog resets the SoC
+    //     (rst:0x10). Stay awake (spin) until the link is fully down.
+    const int BT_QUIESCE_TIMEOUT_MS = 1500;
+    int64_t bt_t0 = esp_timer_get_time();
+    while (bt_a2d_link_active()) {
+        if ((esp_timer_get_time() - bt_t0) / 1000 >= BT_QUIESCE_TIMEOUT_MS) {
+            ESP_LOGW(TAG, "Mode A: BT link still active after %d ms; sleeping anyway",
+                     BT_QUIESCE_TIMEOUT_MS);
+            break;
+        }
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+    ESP_LOGI(TAG, "Mode A: BT quiesced (%lld ms); entering light sleep",
+             (esp_timer_get_time() - bt_t0) / 1000);
+
     int  last_pct = -1;
     bool exit_mode_a = false;
 
@@ -982,6 +1010,13 @@ static void mode_a_run(void)
         int hp_wake_level = (gpio_get_level(PIN_HP_DETECT) == 1) ? 0 : 1;
         esp_sleep_enable_ext0_wakeup(PIN_HP_DETECT, hp_wake_level);
         esp_sleep_enable_ext1_wakeup(1ULL << PIN_CP_BUTTON, ESP_EXT1_WAKEUP_ALL_LOW);
+
+        //  2. Console UART: never sleep with a reply still shifting out. Cutting
+        //     the UART clock mid-TX corrupts the transfer and wedges the sleep
+        //     transition -> RTCWDT. (We don't make UART a wake source: that eats
+        //     the first RX edges and races the async console task against the duty
+        //     loop; a command still lands when sent during an awake window.)
+        esp_rom_output_tx_wait_idle(CONFIG_ESP_CONSOLE_UART_NUM);
 
         esp_light_sleep_start();
         esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
@@ -999,12 +1034,6 @@ static void mode_a_run(void)
                     last_pct = pct;
                 }
             }
-            // Console / BLE may have cleared the sticky pref during a wake
-            // window (rare; those surfaces are intermittent in Mode A). Honour
-            // it as an exit so `mode b` / the Web UI still work if they land.
-            gbhifi_settings_t s;
-            settings_get(&s);
-            if (!s.mode_a) exit_mode_a = true;
 
         } else if (cause == ESP_SLEEP_WAKEUP_EXT0) {
             // HP-detect edge. Debounce, re-read, reroute the codec + amp. We do our
@@ -1021,15 +1050,9 @@ static void mode_a_run(void)
                 pam_set_unmuted(!plugged);
                 dsp_set_hp_plugged(plugged); // right EQ profile live on Mode B resume
                 last_pct = -1;   // re-apply volume after the route change
-                if (!plugged) {
-                    gbhifi_settings_t s;
-                    settings_get(&s);
-                    if (s.unplug_to_b) {
-                        ESP_LOGI(TAG, "Mode A: unplug_to_B; leaving for Mode B");
-                        settings_set_mode_a(false);
-                        exit_mode_a = true;
-                    }
-                }
+                // Mode A stays put on a wired-HP unplug (speaker keeps running in
+                // battery mode, symmetric with insertion); leaving Mode A is only
+                // an explicit R-hold or a mode change.
             }
 
         } else if (cause == ESP_SLEEP_WAKEUP_EXT1) {
@@ -1041,14 +1064,13 @@ static void mode_a_run(void)
             // re-sleep. buttons.c emission is suppressed for the whole Mode A
             // session, so the still-held button can't fire a stray action.
             if (mode_a_button_hold()) {
-                ESP_LOGI(TAG, "Mode A: R held to threshold; exit to Mode B");
-                settings_set_mode_a(false);
-                exit_mode_a = true;
+                ESP_LOGI(TAG, "Mode A: R held to threshold; rebooting into Mode B");
+                app_sm_switch_mode(false);   // save B + reboot; does not return
             }
         }
     }
 
-    // Disarm the RTC wake sources so they don't linger into the awake states.
+    // Disarm the wake sources so they don't linger into the awake states.
     esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
     esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_EXT0);
     esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_EXT1);
@@ -1089,16 +1111,22 @@ static void sm_task(void *arg)
     dsp_set_hp_plugged(s_hp_plugged);   // seed the local-EQ profile for boot HP state
 
     // Boot transition: ST_STANDBY entry. s_state is already ST_STANDBY, so call
-    // the entry actions explicitly. Boot always comes up the full Mode-B path
-    // first: the codec was just configured with live MCLK (main.c), which Mode A
-    // depends on. If the sticky preference is Mode A, drop into it via the normal
-    // mode-change event instead of starting the reconnect campaign.
+    // the entry actions explicitly. main.c already made the boot-mode decision
+    // (settings + reset reason + CP-hold) and gated BT init on it; s_boot_into_mode_a
+    // tells us to match. Mode changes at runtime reboot into the target mode, so the
+    // only place Mode A is entered is here at boot.
     ESP_LOGI(TAG, "*** boot -> %s ***", state_name(s_state));
     gbhifi_settings_t boot_s;
     settings_get(&boot_s);
-    if (boot_s.mode_a) {
-        ESP_LOGI(TAG, "boot preference = Mode A; transitioning after bring-up");
-        post(EV_MODE_CHANGE);
+    if (s_boot_into_mode_a) {
+        // Mode A boot (main.c skipped BT init): drop straight into the light-sleep
+        // loop -- no window, no pause. mode_a_run() owns the CPU and only ever leaves
+        // Mode A by rebooting, so it does not return. Holding CP (R) at power-on
+        // already diverted this boot to Mode B in main.c; that is the only escape.
+        ESP_LOGI(TAG, "boot: entering Mode A");
+        s_boot_arrival = false;
+        enter(ST_MODE_A);
+        mode_a_run();
     } else if (boot_s.auto_connect) {
         try_connect_or_pair();
         if (s_state == ST_STANDBY) {
@@ -1143,14 +1171,15 @@ static void sm_task(void *arg)
         if (ev == EV_BTN_CP_ZONE_CONNECT) { CUE(SFX_SYNTH_REBOND);  continue; }
         if (ev == EV_BTN_CP_ZONE_PAIR)    { CUE(SFX_SYNTH_PAIRING); continue; }
         if (ev == EV_BTN_CP_ZONE_MODE)    { CUE(SFX_SYNTH_MODE);    continue; }
-        // Mode-toggle (released in the mode rung) is available from any awake
-        // state: flip the sticky pref and let the mode-change machinery run.
+        // Mode-toggle (released in the mode rung): switch by rebooting into the
+        // other mode. A Mode A boot comes up BT-less (clean, low-power light sleep);
+        // Mode B boots with the radio.
         if (ev == EV_BTN_CP_MODE) {
             gbhifi_settings_t s;
             settings_get(&s);
-            ESP_LOGI(TAG, "mode-toggle hold; Mode %c", s.mode_a ? 'B' : 'A');
-            settings_set_mode_a(!s.mode_a);
-            post(EV_MODE_CHANGE);
+            ESP_LOGI(TAG, "mode-toggle hold; switching to Mode %c (reboot)",
+                     s.mode_a ? 'B' : 'A');
+            app_sm_switch_mode(!s.mode_a);   // save + reboot; does not return
             continue;
         }
         // Force-sleep (console `sleep` wake-reliability test only). Enter DEEP_IDLE
@@ -1163,52 +1192,16 @@ static void sm_task(void *arg)
             enter(ST_DEEP_IDLE);
             continue;
         }
-        // ~200 ms housekeeping tick: apply the VOL wheel, then promote a
-        // desired-vs-active mode mismatch into a transition event. The mode check
-        // runs during PAIRING too, so a `mode a` from the console (which only sets
-        // the pref and relies on this poll) bails out of pairing immediately, same
-        // as the button's direct EV_MODE_CHANGE. Skipped only while DEEP_IDLE
-        // (asleep, never reached).
+        // ~200 ms housekeeping tick: apply the VOL wheel. (Mode changes reboot, so
+        // there's no in-place desired-vs-active promotion here any more.)
         if (ev == EV_POLL) {
             if (s_state == ST_OTA) continue;  // don't touch volume/codec mid-flash
             vol_apply_from_wheel();
-            if (s_state != ST_DEEP_IDLE) {
-                gbhifi_settings_t s;
-                settings_get(&s);
-                es8388_mode_t desired = s.mode_a ? ES8388_MODE_BYPASS
-                                                 : ES8388_MODE_DSP;
-                if (desired != s_active_mode) post(EV_MODE_CHANGE);
-            }
             continue;
         }
         // Noise-gate deep-silence transition: re-apply the amp mute (drop the
         // speaker amp in silence, restore it the instant audio returns).
         if (ev == EV_GATE_CHANGED) { pam_apply(); continue; }
-        // Apply a pending mode change. Entering Mode A runs the entire Mode A
-        // lifecycle inline: enter(ST_MODE_A) sets up the bypass + parks the
-        // pipeline, then mode_a_run() blocks in the light-sleep duty loop and
-        // transitions back out (to STANDBY/Mode B) itself before returning. Leaving
-        // Mode A is normally driven from inside that loop, so the ST_MODE_A to DSP
-        // branch here is only a defensive fallback.
-        if (ev == EV_MODE_CHANGE) {
-            gbhifi_settings_t s;
-            settings_get(&s);
-            es8388_mode_t desired = s.mode_a ? ES8388_MODE_BYPASS
-                                             : ES8388_MODE_DSP;
-            // A Mode A request from PAIRING bails out of the inquiry immediately
-            // (the enter(ST_MODE_A) -> bt_a2d_disconnect cancels it cleanly),
-            // rather than making the user wait out the pairing-session timeout.
-            // OTA is still excluded (don't interrupt a flash); Mode A no-ops if
-            // already there.
-            if (desired == ES8388_MODE_BYPASS &&
-                s_state != ST_MODE_A && s_state != ST_OTA) {
-                enter(ST_MODE_A);
-                mode_a_run();   // blocks until Mode A exits (back to STANDBY)
-            } else if (desired == ES8388_MODE_DSP && s_state == ST_MODE_A) {
-                enter(ST_STANDBY);
-            }
-            continue;
-        }
         // OTA (BLE firmware update). BEGIN: quiesce + enter ST_OTA, but only from
         // an awake, non-special state: Mode A blocks this task entirely, and
         // PAIRING is a bounded user flow. If refused (or never proceeded),
@@ -1261,6 +1254,27 @@ void app_sm_request_sleep(void)
     // no cross-task race on s_state.
     post(EV_FORCE_SLEEP);
 }
+
+void app_sm_switch_mode(bool to_mode_a)
+{
+    // Mode changes are done by REBOOT, not in place: a Mode A boot skips BT init
+    // entirely for a clean, low-power, reliable light-sleep loop, and Mode B comes
+    // up with the radio. Persist the target mode, then restart into it. The restart
+    // is a software reset (not a power-on), so main.c stays silent (no chime).
+    gbhifi_settings_t s;
+    settings_get(&s);
+    if (s.mode_a == to_mode_a) return;   // already the active mode
+    settings_set_mode_a(to_mode_a);
+    settings_commit();                   // land the boot in the target mode
+    ESP_LOGI(TAG, "mode -> %c; rebooting into it", to_mode_a ? 'A' : 'B');
+    esp_rom_output_tx_wait_idle(CONFIG_ESP_CONSOLE_UART_NUM);  // flush the log line
+    esp_restart();
+}
+
+// main.c computes the boot-mode decision once (settings + reset reason + CP-hold),
+// uses it to gate BT init, and hands it here (into s_boot_into_mode_a, declared up
+// top) so the state machine drops into the same mode. Set before app_sm_start().
+void app_sm_set_boot_into_mode_a(bool v) { s_boot_into_mode_a = v; }
 
 void app_sm_speaker_early_on(void)
 {

@@ -55,6 +55,14 @@ esp_err_t bt_a2d_start_pairing(void);
 // failures within a session are still skipped. See MAX_FAIL_BL in bt_a2d.c.
 void bt_a2d_reset_fail_blacklist(void);
 
+// True while a Bluetooth link is up (A2DP, an in-flight page, or a still-up
+// baseband ACL). bt_a2d_disconnect() only *starts* the teardown; this stays
+// true until the controller reports the ACL fully down. Mode A stays awake
+// (spins) until this goes false before its first manual light sleep, so it
+// never sleeps on top of a live ACL link (which hangs the sleep transition and
+// trips the RTC watchdog).
+bool bt_a2d_link_active(void);
+
 // True if at least one sink is currently bonded. Lets the state machine
 // decide, when pairing gives up, whether to sleep (no bonds) or fall back
 // to bonded reconnect (bonds exist).

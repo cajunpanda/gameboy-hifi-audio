@@ -129,6 +129,11 @@ enum {
 
 static int           s_link_state    = LINK_IDLE;
 static int           s_media_state   = MEDIA_IDLE;
+// Tracks the baseband ACL link, which outlives the A2DP profile: on teardown
+// A2DP disconnects first and the ACL link drops a beat later. Mode A must not
+// hand-roll light sleep until the ACL is fully down (see bt_a2d_link_active),
+// so we follow the GAP ACL conn/disconn-complete events, not the A2DP state.
+static bool          s_acl_up        = false;
 static esp_bd_addr_t s_peer_bda      = {0};
 static bool          s_pairing_mode  = false;  // true while inquiry-pairing
 static bool          s_radio_off     = false;  // `radio off`: gate inquiry + paging TX
@@ -330,6 +335,19 @@ static void gap_cb(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param)
         break;
     case ESP_BT_GAP_MODE_CHG_EVT:
         ESP_LOGI(TAG, "mode change: %d", param->mode_chg.mode);
+        break;
+    case ESP_BT_GAP_ACL_CONN_CMPL_STAT_EVT:
+        s_acl_up = true;
+        ESP_LOGI(TAG, "ACL up (hdl 0x%x)", param->acl_conn_cmpl_stat.handle);
+        break;
+    case ESP_BT_GAP_ACL_DISCONN_CMPL_STAT_EVT:
+        // Baseband link fully down. Trails the A2DP DISCONNECTED event on
+        // teardown; this is the point at which Mode A's manual light sleep is
+        // safe (see bt_a2d_link_active / the Mode A BT-quiesce wait).
+        s_acl_up = false;
+        ESP_LOGI(TAG, "ACL down (hdl 0x%x, reason 0x%x)",
+                 param->acl_disconn_cmpl_stat.handle,
+                 param->acl_disconn_cmpl_stat.reason);
         break;
     default:
         break;
@@ -599,6 +617,18 @@ esp_err_t bt_a2d_disconnect(void)
         esp_a2d_source_disconnect(s_peer_bda);
     }
     return ESP_OK;
+}
+
+bool bt_a2d_link_active(void)
+{
+    // True while any Bluetooth link activity is outstanding: an A2DP link/page
+    // OR a still-up baseband ACL link. The ACL check is the one that matters for
+    // Mode A: bt_a2d_disconnect() only starts the teardown, and its completion
+    // runs on the BT work-task (which can't run while the CPU is light-sleeping),
+    // so Mode A must stay awake until this goes false before its first sleep.
+    if (!s_inited) return false;
+    return s_acl_up ||
+           s_link_state == LINK_CONNECTED || s_link_state == LINK_PAGING;
 }
 
 esp_err_t bt_a2d_media_start(void)

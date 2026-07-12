@@ -235,12 +235,17 @@ static int cmd_mode(int argc, char **argv)
 {
     if (argc != 2) { printf("usage: mode a|b  (a=analog bypass/battery, b=DSP)\n"); return 1; }
     char m = argv[1][0];
+    // Mode changes reboot into the target mode (Mode A boots BT-less for power +
+    // reliability; Mode B boots with the radio). app_sm_switch_mode() persists and
+    // restarts, so this does not return unless we're already in that mode.
     if (m == 'a' || m == 'A') {
-        settings_set_mode_a(true);
-        printf("Mode A requested (analog bypass) - app_sm transitioning\n");
+        printf("Mode A: saving + rebooting into analog bypass...\n");
+        app_sm_switch_mode(true);
+        printf("already in Mode A\n");
     } else if (m == 'b' || m == 'B') {
-        settings_set_mode_a(false);
-        printf("Mode B requested (DSP) - app_sm transitioning\n");
+        printf("Mode B: saving + rebooting into DSP...\n");
+        app_sm_switch_mode(false);
+        printf("already in Mode B\n");
     } else {
         printf("usage: mode a|b\n"); return 1;
     }
@@ -266,23 +271,24 @@ static int cmd_codecmode(int argc, char **argv)
     return 0;
 }
 
-// `unplug stay|b`: set the unplug_to_B preference: on a wired-HP unplug while in
-// Mode A, either stay in Mode A (battery) or switch to Mode B (DSP). Persist
-// with `save`.
-static int cmd_unplug(int argc, char **argv)
+// `bootmode on|off`: whether the Mode A/B preference persists across a power
+// cycle. on (default) = boot back into Mode A if powered off in Mode A; off =
+// always boot Mode B local. Persist with `save`.
+static int cmd_bootmode(int argc, char **argv)
 {
-    if (argc != 2) { printf("usage: unplug stay|b\n"); return 1; }
-    if (strcmp(argv[1], "stay") == 0) {
-        settings_set_unplug_to_b(false);
-        printf("unplug_to_B = off (stay in Mode A on unplug)\n");
-    } else if (strcmp(argv[1], "b") == 0 || strcmp(argv[1], "B") == 0) {
-        settings_set_unplug_to_b(true);
-        printf("unplug_to_B = on (switch to Mode B on unplug)\n");
+    if (argc != 2) { printf("usage: bootmode on|off\n"); return 1; }
+    if (strcmp(argv[1], "on") == 0) {
+        settings_set_boot_mode_a(true);
+        printf("boot_mode_a = on (persist Mode A across power cycles)\n");
+    } else if (strcmp(argv[1], "off") == 0) {
+        settings_set_boot_mode_a(false);
+        printf("boot_mode_a = off (always boot Mode B local)\n");
     } else {
-        printf("usage: unplug stay|b\n"); return 1;
+        printf("usage: bootmode on|off\n"); return 1;
     }
     return 0;
 }
+
 
 // `autoconnect on|off`: Bluetooth connect-on-boot policy. off (default) = manual:
 // on boot the radio comes up idle and the device waits in LOCAL_ONLY; nothing
@@ -471,8 +477,8 @@ static int cmd_get(int argc, char **argv)
            s.eq_bt_enabled ? "on" : "off",
            s.eq_bt_bass_db, s.eq_bt_mid_db, s.eq_bt_treble_db);
     printf("sfx=%s [%+d dB]\n", s.sfx_enabled ? "on" : "off", s.sfx_level_db);
-    printf("mode=%c  unplug_to_B=%s  auto_connect=%s\n",
-           s.mode_a ? 'A' : 'B', s.unplug_to_b ? "on" : "off",
+    printf("mode=%c  boot_mode_a=%s  auto_connect=%s\n",
+           s.mode_a ? 'A' : 'B', s.boot_mode_a ? "on" : "off",
            s.auto_connect ? "on" : "off");
     printf("hold (ms): connect=%u pair=%u mode=%u exit=%u\n",
            s.hold_connect_ms, s.hold_pair_ms, s.hold_mode_ms, s.hold_mode_exit_ms);
@@ -508,7 +514,7 @@ static void register_cmds(void)
         { .command = "bt",    .help = "Drive BT like the button: bt connect|pair", .func = cmd_bt },
         { .command = "mode",  .help = "Set operating mode (sticky): mode a|b (a=bypass/battery, b=DSP)", .func = cmd_mode },
         { .command = "codecmode", .help = "Raw codec poke (no orchestration): codecmode a|b", .func = cmd_codecmode },
-        { .command = "unplug",.help = "On HP unplug in Mode A: unplug stay|b", .func = cmd_unplug },
+        { .command = "bootmode", .help = "Persist Mode A across power cycles: bootmode on|off", .func = cmd_bootmode },
         { .command = "autoconnect", .help = "BT connect-on-boot: autoconnect on|off (off=wait for R hold)", .func = cmd_autoconnect },
         { .command = "hold",  .help = "R-button hold thresholds (ms): hold [connect pair mode exit]", .func = cmd_hold },
         { .command = "wheel", .help = "VOL wheel drives volume: wheel on|off",  .func = cmd_wheel },
