@@ -637,6 +637,10 @@ static void enter(app_state_t next)
         // pairing stay inside this state (see handle_pairing) so the timer
         // measures the whole session rather than being reset each retry.
         xTimerStart(s_pairing_to_t, 0);
+        // Fresh session: forget any sinks blacklisted for failing to open A2DP
+        // in a previous session, so they get a clean chance again. Failures
+        // within this session are still remembered and skipped across re-scans.
+        bt_a2d_reset_fail_blacklist();
         bt_a2d_start_pairing();
         // amp is live in PAIRING, so the user hears it — but skip it on the
         // power-on arrival so we don't stomp the Game Boy boot chime.

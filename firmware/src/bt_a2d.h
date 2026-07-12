@@ -49,6 +49,12 @@ esp_err_t bt_a2d_connect_bonded(void);
 // without a match.
 esp_err_t bt_a2d_start_pairing(void);
 
+// Clear the per-session pairing failure blacklist. Call at the start of a
+// fresh pairing session (not on the per-inquiry re-scans within one) so a
+// sink that failed last session gets a clean chance again, while repeated
+// failures within a session are still skipped. See MAX_FAIL_BL in bt_a2d.c.
+void bt_a2d_reset_fail_blacklist(void);
+
 // True if at least one sink is currently bonded. Lets the state machine
 // decide, when pairing gives up, whether to sleep (no bonds) or fall back
 // to bonded reconnect (bonds exist).

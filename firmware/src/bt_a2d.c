@@ -28,6 +28,15 @@ static const char *TAG = "bt_a2d";
 // Cap on how many bonded sinks we track / cycle through when reconnecting.
 #define MAX_BONDED 4
 
+// Cap on the per-session pairing failure blacklist. Any inquiry-matched sink
+// that fails to open A2DP is remembered here for the rest of the pairing
+// session and skipped on subsequent inquiries, so a device that passes the
+// class-of-device filter but refuses the source connection (e.g. a nearby TV
+// sharing a speaker's exact CoD) can't win every re-scan and starve the sink
+// the user actually wants. Rebuilt from scratch each session, so it adapts to
+// whatever environment the mod is powered up in — nothing is persisted.
+#define MAX_FAIL_BL 8
+
 // NVS record of the most-recently-connected sink, so reconnect tries it first.
 #define NVS_NS       "gbhifi"
 #define NVS_KEY_LAST "last_bda"
@@ -126,6 +135,31 @@ static bool          s_radio_off     = false;  // `radio off`: gate inquiry + pa
 // Cursor into the most-recent-first ordered bond list, advanced on each
 // reconnect attempt so successive ticks cycle through every bonded sink.
 static int           s_try_idx       = 0;
+// Per-session pairing failure blacklist (see MAX_FAIL_BL). Cleared at the
+// start of each pairing session by bt_a2d_reset_fail_blacklist().
+static esp_bd_addr_t s_fail_bl[MAX_FAIL_BL];
+static int           s_fail_bl_n     = 0;
+
+static bool fail_bl_contains(const esp_bd_addr_t bda)
+{
+    for (int i = 0; i < s_fail_bl_n; i++) {
+        if (memcmp(s_fail_bl[i], bda, ESP_BD_ADDR_LEN) == 0) return true;
+    }
+    return false;
+}
+
+static void fail_bl_add(const esp_bd_addr_t bda)
+{
+    if (fail_bl_contains(bda)) return;
+    if (s_fail_bl_n >= MAX_FAIL_BL) {
+        // Full (many failing devices in range): drop the oldest so the most
+        // recent failures still get skipped. Bounded churn, never overflows.
+        memmove(s_fail_bl[0], s_fail_bl[1],
+                (MAX_FAIL_BL - 1) * ESP_BD_ADDR_LEN);
+        s_fail_bl_n = MAX_FAIL_BL - 1;
+    }
+    memcpy(s_fail_bl[s_fail_bl_n++], bda, ESP_BD_ADDR_LEN);
+}
 
 // ---- A2DP data callback ---------------------------------------------------
 // Pulls 16-bit interleaved stereo PCM out of the audio_pipeline stream
@@ -238,6 +272,14 @@ static void handle_inquiry_result(esp_bt_gap_cb_param_t *p)
         return;
     }
 
+    // Skip a sink that already failed to open A2DP this session. Don't cancel
+    // discovery — let the inquiry keep running so a different, working sink can
+    // still answer and win.
+    if (fail_bl_contains(p->disc_res.bda)) {
+        ESP_LOGI(TAG, "skip blacklisted (prev A2DP fail) %s", addr);
+        return;
+    }
+
     ESP_LOGI(TAG, "matched sink: %s name=%s", addr,
              have_name ? name : "(unknown)");
     memcpy(s_peer_bda, p->disc_res.bda, ESP_BD_ADDR_LEN);
@@ -325,6 +367,17 @@ static void av_event_hdlr(uint16_t event, void *param)
             publish(BT_EV_CONNECTED, s_peer_bda);
         } else if (a2d->conn_stat.state == ESP_A2D_CONNECTION_STATE_DISCONNECTED) {
             ESP_LOGI(TAG, "A2DP disconnected");
+            // A failed page during pairing never reached LINK_CONNECTED, so the
+            // link is still LINK_PAGING here (a genuine post-connect drop would
+            // be LINK_CONNECTED). Blacklist that peer for the rest of the
+            // session so the next inquiry doesn't just re-match it and loop.
+            if (s_pairing_mode && s_link_state == LINK_PAGING) {
+                char addr[18];
+                bda_str(a2d->conn_stat.remote_bda, addr);
+                fail_bl_add(a2d->conn_stat.remote_bda);
+                ESP_LOGW(TAG, "sink %s failed A2DP open; blacklisted for session (%d)",
+                         addr, s_fail_bl_n);
+            }
             s_link_state  = LINK_IDLE;
             s_media_state = MEDIA_IDLE;
             audio_pipeline_set_bt_streaming(false);   // close the producer gate
@@ -460,6 +513,11 @@ esp_err_t bt_a2d_connect_bonded(void)
     ESP_LOGI(TAG, "*** paging bonded peer %s (%d/%d) ***", addr, idx + 1, count);
     s_link_state = LINK_PAGING;
     return esp_a2d_source_connect(s_peer_bda);
+}
+
+void bt_a2d_reset_fail_blacklist(void)
+{
+    s_fail_bl_n = 0;
 }
 
 esp_err_t bt_a2d_start_pairing(void)
