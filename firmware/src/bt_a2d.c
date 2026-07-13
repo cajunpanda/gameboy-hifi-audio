@@ -563,6 +563,36 @@ void bt_a2d_set_radio(bool on)
     ESP_LOGI(TAG, "BT radio %s", on ? "on" : "off (inquiry + paging gated)");
 }
 
+// Bench knob: clamp the BR/EDR TX power. Same 3 dB controller steps as the
+// BLE side; min and max are pinned together so link power control cannot
+// climb back up. Does not persist.
+void bt_a2d_set_tx_power_dbm(int dbm)
+{
+    if (dbm < -12) dbm = -12;
+    if (dbm > 9)   dbm = 9;
+    esp_power_level_t lvl = (esp_power_level_t)(ESP_PWR_LVL_N12 + (dbm + 12) / 3);
+    esp_bredr_tx_power_set(lvl, lvl);
+    ESP_LOGI(TAG, "BR/EDR TX power %d dBm (lvl %d)", dbm, (int)lvl);
+}
+
+// Bench knob: drop the whole BT stack (Bluedroid + controller) to measure the
+// controller's idle floor. Use only with the link idle (no A2DP connection).
+// `on` restores the stack but not BLE advertising; follow with `radio ble on`.
+// Does not persist.
+void bt_a2d_set_controller(bool on)
+{
+    if (!s_inited) return;
+    if (!on) {
+        esp_bluedroid_disable();
+        esp_bt_controller_disable();
+        ESP_LOGI(TAG, "BT controller off (bench)");
+    } else {
+        esp_bt_controller_enable(ESP_BT_MODE_BTDM);
+        esp_bluedroid_enable();
+        ESP_LOGI(TAG, "BT controller on (bench)");
+    }
+}
+
 bool bt_a2d_has_bond(void)
 {
     if (!s_inited) return false;   // BT skipped this boot (low battery)

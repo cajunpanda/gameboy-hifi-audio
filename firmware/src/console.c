@@ -8,6 +8,7 @@
 #include "esp_check.h"
 #include "esp_console.h"
 #include "esp_log.h"
+#include "esp_pm.h"
 #include "esp_system.h"
 #include "esp_heap_caps.h"
 #include "linenoise/linenoise.h"
@@ -443,8 +444,44 @@ static int cmd_radio(int argc, char **argv)
         printf("BLE TX power %d dBm (snapped to 3 dB step)\n", atoi(argv[2]));
         return 0;
     }
-    printf("usage: radio on|off | radio ble|bt on|off | radio bleint <ms> | radio blepwr <-12..9>\n");
+    if (argc == 3 && !strcmp(argv[1], "btpwr")) {
+        bt_a2d_set_tx_power_dbm(atoi(argv[2]));
+        printf("BR/EDR TX power %d dBm (snapped to 3 dB step)\n", atoi(argv[2]));
+        return 0;
+    }
+    if (argc == 3 && !strcmp(argv[1], "ctrl") &&
+        (!strcmp(argv[2], "on") || !strcmp(argv[2], "off"))) {
+        bool on = !strcmp(argv[2], "on");
+        bt_a2d_set_controller(on);
+        printf("BT controller %s%s\n", on ? "ON" : "OFF",
+               on ? " (re-arm advertising with `radio ble on`)" : "");
+        return 0;
+    }
+    printf("usage: radio on|off | radio ble|bt|ctrl on|off | radio bleint <ms> | radio blepwr|btpwr <-12..9>\n");
     return 1;
+}
+
+// `pm dfs on|off`: bench knob for dynamic frequency scaling. on lets the CPU
+// drop to 40 MHz when no task holds a max-freq lock (80 MHz under load); off
+// pins 80 MHz. Watch for audio underruns while on. Does not persist.
+static int cmd_pm(int argc, char **argv)
+{
+    if (argc != 3 || strcmp(argv[1], "dfs") ||
+        (strcmp(argv[2], "on") && strcmp(argv[2], "off"))) {
+        printf("usage: pm dfs on|off\n");
+        return 1;
+    }
+    bool on = (strcmp(argv[2], "on") == 0);
+    esp_pm_config_t cfg = {
+        .max_freq_mhz = 80,
+        .min_freq_mhz = on ? 40 : 80,
+        .light_sleep_enable = false,
+    };
+    esp_err_t err = esp_pm_configure(&cfg);
+    printf("%s\n", err == ESP_OK
+                   ? (on ? "DFS on (80/40 MHz)" : "DFS off (pinned 80 MHz)")
+                   : "FAILED (check log)");
+    return 0;
 }
 
 // `wavedump [n]`: capture n raw ADC frames (default 1024) and dump as CSV for
@@ -550,7 +587,8 @@ static void register_cmds(void)
         { .command = "wheel", .help = "VOL wheel drives volume: wheel on|off",  .func = cmd_wheel },
         { .command = "batt",  .help = "Read battery rail voltage: batt",         .func = cmd_batt },
         { .command = "nr",    .help = "Noise reduction: nr | hpf|lpf|notch <hz> [q] | gate <dBFS> [range]", .func = cmd_nr },
-        { .command = "radio", .help = "RF bench controls: radio on|off | ble|bt on|off | bleint <ms> | blepwr <dBm>", .func = cmd_radio },
+        { .command = "radio", .help = "RF bench controls: radio on|off | ble|bt on|off | bleint <ms> | blepwr|btpwr <dBm>", .func = cmd_radio },
+        { .command = "pm",    .help = "Power bench controls: pm dfs on|off",       .func = cmd_pm },
         { .command = "wavedump",.help = "Capture ADC samples for analysis: wavedump [n]", .func = cmd_wavedump },
         { .command = "outvol",.help = "Mode A analog volume (HP+spk drivers): outvol <0-100>", .func = cmd_outvol },
         { .command = "hp",    .help = "Override HP-detect (bench): hp plug|unplug|follow", .func = cmd_hp },

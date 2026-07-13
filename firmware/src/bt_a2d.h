@@ -89,3 +89,11 @@ esp_err_t bt_a2d_media_suspend(void);
 // happens; `on` re-allows it. Pairs with ble_config_set_advertising() behind the
 // `radio` console command.
 void bt_a2d_set_radio(bool on);
+
+// Bench knob: pin the BR/EDR TX power (min = max) in 3 dB controller steps,
+// -12..+9 dBm. Behind `radio btpwr`; does not persist.
+void bt_a2d_set_tx_power_dbm(int dbm);
+
+// Bench knob: disable/enable Bluedroid plus the BTDM controller to measure the
+// idle radio floor. Behind `radio ctrl`; link must be idle. Does not persist.
+void bt_a2d_set_controller(bool on);
