@@ -312,6 +312,19 @@ thin. For the next rev, in rough order of value:
    1.5x output current at 2.4 V in) sees all of that resistance. C1 is a single
    derated 22 µF; a second 22 µF (or one 47 µF, 10 V) at U3 VIN stiffens it.
 
+**Adopted in the rev 1.1 schematic (2026-07-12)**, merged with the BT switching
+noise fixes (see "Bluetooth switching noise into the analog outputs" below):
+
+1. Done, one BOM line: the 22 µF line swapped to **CL21A226MAQNNNE (25 V X5R
+   0805, JLCPCB basic C45783)** — ~16 µF effective each at 3.3 V vs ~9 µF for the
+   old 6.3 V 0603 — at C1/C2 plus four new placements (C32 ESP32 3V3, C33 PAM
+   VDD, C34 second VOUT, C35 second VIN). Rail-wide effective bulk ~20 µF -> ~60 µF.
+2. Done — C33 at U4 VDD.
+3. Verified, no change: the INPAQ WIP252012P-R47ML datasheet specs Isat 5.3 A
+   typ / 4.95 A max-spec (30 % inductance-drop) and Irms 4.6 A, above the
+   TPS61021A's ~4.6 A switch limit (`datasheets/WIP252012P_INPAQ.pdf`).
+4. Done — C35 beside C1 at U3 VIN.
+
 ## Boot latency and the startup chime
 
 The mod boots on the GBA's switched rail, so the Game Boy power-on chime is the
@@ -420,6 +433,65 @@ it look mechanical -- it is not.
 Fixes: use a serial cable that does not feed VCC (leave only TX/RX/GND/DTR), and/or
 the serial_proxy.py open-without-DTR-glitch change. Rev B: do not hard-tie the
 Tag-Connect VCC to +3V3.
+
+## Bluetooth switching noise into the analog outputs (diagnosed 2026-07-12; hardware fix in rev 1.1)
+
+Two audible artifacts on the local outputs (speaker and headphones), never heard
+at a Bluetooth sink: a slow periodic click that is always present in Mode B, and
+a high-pitched whine during pairing. Bench-localized with the user listening
+while console commands A/B'd one variable at a time (GBA paused silent):
+
+- **The click is the BLE advertising burst.** Its rate tracks the advertising
+  interval exactly (default 1.5–2 s; at a 300 ms test interval it became ~3
+  ticks/s). The whine is the BT-classic inquiry train during pairing — TX bursts
+  at the 625 µs slot cadence put the envelope at 0.8–1.6 kHz, squarely audible.
+- **TX power is irrelevant.** Dropping BLE TX from −3 dBm to −12 dBm changed
+  nothing audible: the coupling is the fixed ~100 mA-class supply step when the
+  radio wakes from modem sleep for each advertising event (PLL spin-up + clock
+  switching), not the transmitted energy. Firmware knobs cannot fix this; they
+  only change the cadence.
+- **Injection is analog, downstream of the DSP.** With the DAC fed pure digital
+  silence (`vol 0`) the click is unchanged — so the NR gate can never touch it,
+  and the BT sink stays clean because it taps the ADC/digital side.
+- **Two entry points.** Headphones: killing the ES8388's LOUT1/ROUT1 analog
+  attenuator (`out1 0x00`, −45 dB) kills the click → it enters the codec's
+  DAC/mixer stages, which ride AVDD. Speaker: the click survives both `vol 0`
+  and `out2 0x00` → it enters at the PAM8302A stage (VDD PSRR against the rail
+  droop, and/or ground shift at its single-ended IN− reference, ×24 dB gain).
+- ADC pickup is minor: `wavedump` with advertising forced to 20 ms shows only
+  ~2.5 dB over the −60 dBFS floor vs radio-off.
+
+Root cause: one TPS61021A boost rail feeds the ESP32 radio, the codec
+(DVDD/PVDD directly, AVDD through FB1 — a 600 Ω@100 MHz bead that is ~0 Ω at
+audio-envelope frequencies), and the speaker amp, with only ~20 µF effective
+bulk. The radio's wake transient droops the rail; both analog output stages
+reproduce the envelope.
+
+Rev 1.1 hardware changes (schematic edited 2026-07-12):
+
+1. **U5 LP5907MFX-3.0 low-noise LDO** (SOT-23-5, ~82 dB PSRR at 1 kHz) now
+   feeds AVDD from the bead: +3V3 -> FB1 -> AVDD_IN -> U5 -> AVDD (-> R17 ->
+   HPVDD). C6/C7 become the LDO's input reservoir on AVDD_IN; new C31 (1 µF,
+   existing 0402 line) is the datasheet-nominal output cap. AVDD drops 3.3 V ->
+   3.0 V (~1 dB less HP swing; ES8388 analog range is 2.7–3.6 V). Kills the HP
+   click and whine at the source. JLC extended part — no basic low-noise LDO
+   exists; genuine TI, LCSC C475492, DigiKey 296-40357-1-ND.
+2. **Rail bulk** for the PAM path and BOD margin — see the adopted list under
+   "Suggested hardware changes" above (shared fix: same droop, two symptoms).
+3. **Layout rules for 1.1:** the PAM IN− AC-ground cap (C27) must ground at U4's
+   GND pin; pair the LOUT2 feed with its return; keep ESP32 ground-return vias
+   away from the AGND net-tie (NT1); place the FB1 -> U5 -> C31 chain tight to
+   the codec's AVDD pin.
+
+Firmware options (work on 1.0 boards, independent of the spin): an on-demand
+BLE advertising setting (advertise only in a config window — the only firmware
+way to silence the click), and muting the outputs during the 12.8 s pairing
+inquiry to mask the whine.
+
+Bench tooling added for this work (`console.c`): `radio ble|bt on|off` splits
+the two radios (bare `radio on|off` still does both), `radio bleint <ms>`
+overrides the advertising interval, `radio blepwr <dBm>` the BLE TX power.
+None persist across reboot.
 
 ## Antenna: U1 uses MHF III, not U.FL (found on the first production run)
 

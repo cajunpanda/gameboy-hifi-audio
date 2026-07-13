@@ -60,10 +60,10 @@
           "hatch_smoothing_level": 0,
           "hatch_smoothing_value": 0.1,
           "hatch_thickness": 1.0,
-          "min_clearance": 0.5,
+          "min_clearance": 0.25,
           "min_island_area": 10.0,
           "min_thickness": 0.25,
-          "pad_connection": 1,
+          "pad_connection": 2,
           "remove_islands": 0,
           "thermal_relief_gap": 0.5,
           "thermal_relief_spoke_width": 0.5
@@ -77,6 +77,10 @@
         }
       ],
       "drc_exclusions": [
+        [
+          "hole_clearance|96350000|109200000|857916c2-019e-4608-a5d4-1406f55b685e|6cc62c20-5199-4e5b-8338-d11f8d684908",
+          ""
+        ],
         [
           "lib_footprint_mismatch|105737500|121900000|fbfd9d27-1f44-4dd6-967b-7e6e3a163e7f|00000000-0000-0000-0000-000000000000",
           ""
@@ -94,7 +98,11 @@
           ""
         ],
         [
-          "text_thickness|91300000|108800000|bed448f8-f04e-40b0-8ee6-62a1558ba707|00000000-0000-0000-0000-000000000000",
+          "silk_over_copper|112770000|124345000|d8a01b19-627e-436d-97ad-b3f7a720287e|d8ebeb93-196d-44c7-a940-36f91d4f2875",
+          ""
+        ],
+        [
+          "text_thickness|90900000|108750000|bed448f8-f04e-40b0-8ee6-62a1558ba707|00000000-0000-0000-0000-000000000000",
           ""
         ]
       ],
@@ -277,7 +285,7 @@
       "internal_id": "",
       "mfg": "",
       "mpn": "",
-      "sch_revision": ""
+      "sch_revision": "1.1"
     },
     "layer_pairs": [],
     "layer_presets": [],
@@ -727,7 +735,7 @@
         "uuid": "e7656266-2f58-473d-b3ae-fcd2db0ef0fd"
       }
     ],
-    "used_designators": "J7-8,C27,C29,#PWR39",
+    "used_designators": "#PWR39,#PWR41,C27,C29,J7-8",
     "variants": []
   },
   "sheets": [
