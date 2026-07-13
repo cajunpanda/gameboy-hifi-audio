@@ -278,9 +278,26 @@ void app_main(void)
     // STRAIGHT into Mode A -- no chime, no pause. A real power cycle consults the
     // persist flag; a mode-change reboot (SW reset) always lands in the saved mode.
     // Holding CP (R) at power-on forces Mode B -- the only Mode A boot escape.
+    // Enable the button pad's input buffer before sampling: on a cold boot
+    // nothing has configured it yet (gate_cp_wake only does on an EXT1 wake),
+    // and an unconfigured input-only pad reads 0 -- a phantom "held" that
+    // would divert the boot to Mode B. buttons_init() reconfigures the same
+    // pad with interrupts later.
+    rtc_gpio_deinit(PIN_CP_BUTTON);
+    gpio_config_t cp = {
+        .pin_bit_mask = 1ULL << PIN_CP_BUTTON,
+        .mode         = GPIO_MODE_INPUT,
+        .pull_up_en   = GPIO_PULLUP_DISABLE,   // external 10k pull-up
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type    = GPIO_INTR_DISABLE,
+    };
+    ESP_ERROR_CHECK(gpio_config(&cp));
     bool cp_held = (gpio_get_level(PIN_CP_BUTTON) == 0);   // active LOW
     bool boot_mode_a = boot_s.mode_a && !cp_held &&
                        (!power_on || boot_s.boot_mode_a);
+    ESP_LOGI(TAG, "boot-mode decision: mode_a=%d cp_held=%d reset=%d power_on=%d "
+             "persist=%d -> %s", boot_s.mode_a, cp_held, esp_reset_reason(),
+             power_on, boot_s.boot_mode_a, boot_mode_a ? "A" : "B");
     app_sm_set_boot_into_mode_a(boot_mode_a);
     if (boot_mode_a) {
         ESP_LOGI(TAG, "Mode A boot: skipping BT init + chime (BT-less battery mode)");
