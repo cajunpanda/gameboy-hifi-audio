@@ -33,6 +33,27 @@ pio device monitor               # serial monitor only (115200 8N1)
 
 The build output is `.pio/build/prod/firmware.bin`.
 
+### Recommended: benchmux for iterating
+
+For a build-flash-watch loop, [benchmux](https://github.com/cajunpanda/benchmux) is more
+convenient than the raw `pio` commands. It owns the serial port and tees output to a shared
+logfile, so it flashes without stopping the monitor, the boot log for the new firmware
+streams straight into the log you are already watching, and you can follow that log from any
+terminal. It also flashes over BLE. Install it per its README, then from `firmware/`:
+
+```sh
+serial_proxy.py monitor --port FTDI &    # own the port, stream to /tmp/serial_proxy.log
+serial_proxy.py tail                     # follow the log (from any terminal)
+serial_proxy.py flash --env prod         # build + upload without stopping the monitor
+serial_proxy.py flash --env prod --fs    # also flash the LittleFS clip image
+serial_proxy.py send get                 # inject a console command through the monitor
+```
+
+`--fs` flashes the LittleFS clip image that a plain upload skips (see "Partitions and the
+clip image"), so a `firmware/data/` change needs no separate esptool step. The commands run
+once and exit with a status code, which also makes benchmux a good fit for driving the board
+from an editor task or an AI coding agent.
+
 If you change `sdkconfig.defaults`, delete `sdkconfig.prod` to force it to
 regenerate. Adding a new `CONFIG_*` symbol in `Kconfig.projbuild` also needs
 that delete plus a rebuild, otherwise the build reports the symbol as
