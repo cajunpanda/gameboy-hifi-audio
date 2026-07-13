@@ -403,18 +403,48 @@ static int cmd_nr(int argc, char **argv)
     return 0;
 }
 
-// `radio on|off`: silence the radio (BT inquiry/paging + BLE advertising) for a
-// clean GBA-only noise measurement; on restores normal operation.
+// `radio ...`: bench RF controls. Bare on|off silences/restores both radios
+// (BT inquiry/paging + BLE advertising); `ble`/`bt` split them so the two
+// periodic-noise sources can be isolated; `bleint`/`blepwr` change the BLE
+// advertising cadence/energy so a rail-coupled click can be fingerprinted
+// (its rate should track bleint, its level blepwr). None of these persist.
 static int cmd_radio(int argc, char **argv)
 {
-    if (argc != 2 || (strcmp(argv[1], "on") && strcmp(argv[1], "off"))) {
-        printf("usage: radio on|off\n"); return 1;
+    if (argc == 2 && (!strcmp(argv[1], "on") || !strcmp(argv[1], "off"))) {
+        bool on = !strcmp(argv[1], "on");
+        bt_a2d_set_radio(on);
+        ble_config_set_advertising(on);
+        printf("radio %s\n", on ? "ON" : "OFF (BT inquiry + BLE advertising stopped)");
+        return 0;
     }
-    bool on = (strcmp(argv[1], "on") == 0);
-    bt_a2d_set_radio(on);
-    ble_config_set_advertising(on);
-    printf("radio %s\n", on ? "ON" : "OFF (BT inquiry + BLE advertising stopped)");
-    return 0;
+    if (argc == 3 && !strcmp(argv[1], "ble") &&
+        (!strcmp(argv[2], "on") || !strcmp(argv[2], "off"))) {
+        bool on = !strcmp(argv[2], "on");
+        ble_config_set_advertising(on);
+        printf("BLE advertising %s\n", on ? "ON" : "OFF");
+        return 0;
+    }
+    if (argc == 3 && !strcmp(argv[1], "bt") &&
+        (!strcmp(argv[2], "on") || !strcmp(argv[2], "off"))) {
+        bool on = !strcmp(argv[2], "on");
+        bt_a2d_set_radio(on);
+        printf("BT classic radio %s\n", on ? "ON" : "OFF");
+        return 0;
+    }
+    if (argc == 3 && !strcmp(argv[1], "bleint")) {
+        int ms = atoi(argv[2]);
+        if (ms <= 0) { printf("usage: radio bleint <ms>\n"); return 1; }
+        ble_config_set_adv_interval_ms((uint32_t)ms);
+        printf("BLE adv interval %d ms\n", ms);
+        return 0;
+    }
+    if (argc == 3 && !strcmp(argv[1], "blepwr")) {
+        ble_config_set_tx_power_dbm(atoi(argv[2]));
+        printf("BLE TX power %d dBm (snapped to 3 dB step)\n", atoi(argv[2]));
+        return 0;
+    }
+    printf("usage: radio on|off | radio ble|bt on|off | radio bleint <ms> | radio blepwr <-12..9>\n");
+    return 1;
 }
 
 // `wavedump [n]`: capture n raw ADC frames (default 1024) and dump as CSV for
@@ -520,7 +550,7 @@ static void register_cmds(void)
         { .command = "wheel", .help = "VOL wheel drives volume: wheel on|off",  .func = cmd_wheel },
         { .command = "batt",  .help = "Read battery rail voltage: batt",         .func = cmd_batt },
         { .command = "nr",    .help = "Noise reduction: nr | hpf|lpf|notch <hz> [q] | gate <dBFS> [range]", .func = cmd_nr },
-        { .command = "radio", .help = "Silence radio for noise test: radio on|off", .func = cmd_radio },
+        { .command = "radio", .help = "RF bench controls: radio on|off | ble|bt on|off | bleint <ms> | blepwr <dBm>", .func = cmd_radio },
         { .command = "wavedump",.help = "Capture ADC samples for analysis: wavedump [n]", .func = cmd_wavedump },
         { .command = "outvol",.help = "Mode A analog volume (HP+spk drivers): outvol <0-100>", .func = cmd_outvol },
         { .command = "hp",    .help = "Override HP-detect (bench): hp plug|unplug|follow", .func = cmd_hp },

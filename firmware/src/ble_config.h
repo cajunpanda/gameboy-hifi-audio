@@ -51,6 +51,14 @@ esp_err_t ble_config_ota_proceed(void);
 // inhibits the auto re-advertise on central disconnect until turned back on.
 void ble_config_set_advertising(bool on);
 
+// Bench knobs behind `radio bleint`/`radio blepwr`: override the advertising
+// interval (clamped to 20 ms..10.24 s) and the BLE TX power (snapped to the
+// controller's 3 dB steps, -12..+9 dBm) at runtime, so a rail-coupled periodic
+// click can be fingerprinted (its cadence should track the interval, its
+// amplitude the TX power). Not persisted; defaults return on reboot.
+void ble_config_set_adv_interval_ms(uint32_t ms);
+void ble_config_set_tx_power_dbm(int dbm);
+
 #ifdef __cplusplus
 }
 #endif

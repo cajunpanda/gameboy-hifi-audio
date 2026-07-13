@@ -797,6 +797,31 @@ void ble_config_set_advertising(bool on)
     ESP_LOGI(TAG, "BLE advertising %s", on ? "on" : "off");
 }
 
+void ble_config_set_adv_interval_ms(uint32_t ms)
+{
+    // Clamp to the BLE spec range (20 ms .. 10.24 s), keeping room for the
+    // +10 ms min/max jitter window the controller wants.
+    if (ms < 20)    ms = 20;
+    if (ms > 10220) ms = 10220;
+    uint16_t units = (uint16_t)((ms * 1000) / 625);
+    s_adv_params.adv_int_min = units;
+    s_adv_params.adv_int_max = units + 16;
+    esp_ble_gap_stop_advertising();
+    start_adv_if_ready();
+    ESP_LOGI(TAG, "BLE adv interval %u ms (%u units)", (unsigned)ms, units);
+}
+
+void ble_config_set_tx_power_dbm(int dbm)
+{
+    if (dbm < -12) dbm = -12;
+    if (dbm > 9)   dbm = 9;
+    // Controller steps are 3 dB apart from N12 (=0) to P9 (=7); snap down.
+    esp_power_level_t lvl = (esp_power_level_t)(ESP_PWR_LVL_N12 + (dbm + 12) / 3);
+    esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_ADV,       lvl);
+    esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_CONN_HDL0, lvl);
+    ESP_LOGI(TAG, "BLE TX power %d dBm (lvl %d)", dbm, (int)lvl);
+}
+
 // ---- GAP (BLE) callback ---------------------------------------------------
 static void gap_ble_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param)
 {
@@ -1026,5 +1051,7 @@ esp_err_t ble_config_init(void)
 esp_err_t ble_config_init(void) { return ESP_OK; }
 void      ble_config_set_ota_cb(ble_ota_event_cb_t cb) { (void)cb; }
 esp_err_t ble_config_ota_proceed(void) { return ESP_OK; }
+void      ble_config_set_adv_interval_ms(uint32_t ms) { (void)ms; }
+void      ble_config_set_tx_power_dbm(int dbm) { (void)dbm; }
 
 #endif
