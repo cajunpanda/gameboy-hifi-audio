@@ -29,8 +29,8 @@ for anyone who would rather not source the parts and solder it themselves. Kits 
 pre-flashed and update over Bluetooth, so they need no programming cable.
 
 I am looking for beta testers interested in trying out the mod. If you want an early kit or
-board, get in touch at [cajunpanda.com](https://cajunpanda.com) or open an issue on this
-repository.
+board, reply on the [beta testers discussion](https://github.com/cajunpanda/gameboy-hifi-audio/discussions/1)
+or join the [Discord](https://discord.gg/6BNetnK6kC).
 
 This repository currently holds the board for the original Game Boy Advance
 (AGB). The firmware is shared across models. Boards for other Game Boy models
