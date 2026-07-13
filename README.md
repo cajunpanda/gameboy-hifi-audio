@@ -24,9 +24,13 @@ What you get:
   through the codec in analog, for long unplugged sessions.
 - Firmware updates over Bluetooth.
 
-Prebuilt, pre-assembled kits are available at [cajunpanda.com](https://cajunpanda.com)
-if you would rather not source the parts and solder it yourself. Kits ship
+Prebuilt, pre-assembled kits are coming soon at [cajunpanda.com](https://cajunpanda.com),
+for anyone who would rather not source the parts and solder it themselves. Kits will ship
 pre-flashed and update over Bluetooth, so they need no programming cable.
+
+I am looking for beta testers interested in trying out the mod. If you want an early kit or
+board, get in touch at [cajunpanda.com](https://cajunpanda.com) or open an issue on this
+repository.
 
 This repository currently holds the board for the original Game Boy Advance
 (AGB). The firmware is shared across models. Boards for other Game Boy models
