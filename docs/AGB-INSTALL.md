@@ -19,7 +19,7 @@ console's audio system.
 - A Tag-Connect TC2030 serial cable for the first flash, only if you assembled
   the board yourself (see First firmware flash below). Prebuilt kits ship
   pre-flashed and need no cable.
-- GBA opening tools (a tri-wing driver for the shell, a spudger).
+- GBA opening tools (a tri-wing driver for the shell).
 
 ## Remove the stock parts
 
@@ -47,6 +47,24 @@ holes.
 Solder the flex exactly per its silkscreen and the KiCad flex project. Follow
 that pad mapping, not a generic pinout.
 
+### Tapping the CPU audio (two ways)
+
+The two audio signals (the CPU sound pins S0 and S1) can reach the flex by either
+route. Pick whichever you find easier; the result is electrically the same.
+
+- **At the R30 / R31 pads (default).** The flex lands solder directly onto the
+  R30 and R31 footprints. These are small pads right at the flex edge, so this is
+  the fiddliest joint of the whole install.
+- **Through the U6 footprint (alternative).** Bridge across each of the R30 and
+  R31 footprints with a short length of fine wire, so the audio passes straight
+  through to the U6 footprint. The flex then picks S0 and S1 up at the U6 pads
+  (where it already solders), and nothing has to land on the tiny R30 / R31 flex
+  lands.
+
+If an S0 or S1 pad lifts or is damaged while you remove the stock parts, bridge
+from it to the nearby S0 / S1 via instead. It is the same net, so the tap still
+works.
+
 <!-- photo: flex soldered onto the footprints -->
 
 ## Connect the boards and the speaker
@@ -67,11 +85,11 @@ buys usable, clean volume. Do not go below 4 Ω (the amp's minimum load).
 
 Recommended parts (all 23 mm, 8 Ω, NdFeB):
 
-| Role | Part | Size | Sensitivity | Notes |
-|------|------|------|-------------|-------|
-| Primary | PUI Audio `AS02308MR-T` | Ø22.5 × 7.15 mm | 97 dB @ 1 W/0.1 m | PEN cone, solder pads. **Fit-test the 7.15 mm height** — tight in the AGB shell (a known-good speaker is 6.5 mm). |
-| 2nd source | Same Sky `CMS-2207-18SP` | Ø22.5 × 7.0 mm | 97 dB @ 1 W/0.1 m | Spec-identical drop-in for the PUI; use whichever is in stock. Same fit caveat. |
-| Slim fallback | Soberton `SP-2305L` | Ø23 × 5.0 mm | 89 dB | 70 mm flying leads (suit the SPK+/SPK- wiring). Use if 7 mm fouls the shell; ~5 dB less efficient. |
+| Role          | Part                     | Size            | Sensitivity       | Notes                                                                                                             |
+| ------------- | ------------------------ | --------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Primary       | PUI Audio `AS02308MR-T`  | Ø22.5 × 7.15 mm | 97 dB @ 1 W/0.1 m | PEN cone, solder pads. **Fit-test the 7.15 mm height** — tight in the AGB shell (a known-good speaker is 6.5 mm). |
+| 2nd source    | Same Sky `CMS-2207-18SP` | Ø22.5 × 7.0 mm  | 97 dB @ 1 W/0.1 m | Spec-identical drop-in for the PUI; use whichever is in stock. Same fit caveat.                                   |
+| Slim fallback | Soberton `SP-2305L`      | Ø23 × 5.0 mm    | 89 dB             | 70 mm flying leads (suit the SPK+/SPK- wiring). Use if 7 mm fouls the shell; ~5 dB less efficient.                |
 
 ## First firmware flash
 

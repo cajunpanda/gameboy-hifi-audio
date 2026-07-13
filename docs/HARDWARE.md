@@ -28,14 +28,14 @@ where each symbol carries its manufacturer, LCSC, and DigiKey part numbers. Expo
 it from the [main-board schematic](../hardware/agb/agb-hifi-audio-pcb/). The main
 active parts are:
 
-| Ref | Part | Function |
-| --- | --- | --- |
-| U1 | ESP32-PICO-MINI-02-N8R2 | MCU, Bluetooth radio, 8 MB flash |
-| U2 | ES8388 | Stereo audio codec: ADC, DAC, headphone amp, analog bypass |
-| U3 | TPS61021A | Boost converter, battery to 3.3 V |
-| U4 | PAM8302A | Mono Class-D amplifier for the internal speaker |
-| U5 | LP5907MFX-3.0 | Low-noise LDO for the codec's analog supply (rev 1.1) |
-| FPC1 | FH12A-12S-0.5SH | 12-pin flat-flex connector for the flex |
+| Ref  | Part                    | Function                                                   |
+| ---- | ----------------------- | ---------------------------------------------------------- |
+| U1   | ESP32-PICO-MINI-02-N8R2 | MCU, Bluetooth radio, 8 MB flash                           |
+| U2   | ES8388                  | Stereo audio codec: ADC, DAC, headphone amp, analog bypass |
+| U3   | TPS61021A               | Boost converter, battery to 3.3 V                          |
+| U4   | PAM8302A                | Mono Class-D amplifier for the internal speaker            |
+| U5   | LP5907MFX-3.0           | Low-noise LDO for the codec's analog supply                |
+| FPC1 | FH12A-12S-0.5SH         | 12-pin flat-flex connector for the flex                    |
 
 The ES8388 is a QFN-28 and is not hand-solderable in the usual sense. Plan on a
 stencil and reflow, or hot air. The ESP32 module needs the same treatment: its
@@ -43,48 +43,39 @@ pads sit under the module's edge rather than as exposed castellations, so an iro
 cannot reach them all. Its pitch is coarser than the codec's, so it is the more
 forgiving of the two, but it is still a reflow or hot-air part.
 
-### Antenna
-
-U1 is the `-02` module, which has an on-board PCB antenna, so the mod needs no
-external antenna, connector, or adapter. Respect the module's antenna keep-out:
-keep copper, ground pour, metal, and wiring away from the antenna end, and mount
-it clear of the shell's metal. The first prototype used the `-02U` variant with
-an external I-PEX **MHF III (W.FL)** antenna; [`PROTOTYPE-V1.0.md`](PROTOTYPE-V1.0.md)
-records that run and why the design moved to the built-in antenna.
-
 ### Full bill of materials
 
 Passives are listed by value; the schematic carries the exact manufacturer,
 LCSC, and DigiKey part numbers for every line. 26 lines, 60 pieces.
 
-| Ref(s) | Qty | Value / part | Package |
-| --- | --- | --- | --- |
-| C1, C2, C32–C35 | 6 | 22 µF 25 V | 0805 |
-| C3, C6, C8, C10, C11, C20, C24 | 7 | 10 µF | 0402 |
-| C4, C7, C9, C21, C25, C26, C30 | 7 | 100 nF | 0402 |
-| C5, C15, C16, C19, C27, C31 | 6 | 1 µF | 0402 |
-| C12 | 1 | 4.7 µF | 0402 |
-| C13, C14 | 2 | 10 nF C0G | 0402 |
-| C17, C18 | 2 | 220 µF 6.3 V (tantalum) | EIA-3528 |
-| C22, C23 | 2 | 10 nF | 0402 |
-| C29 | 1 | 10 pF | 0402 |
-| R1 | 1 | 316 kΩ | 0402 |
-| R2, R9, R20, R21 | 4 | 100 kΩ | 0402 |
-| R3, R4 | 2 | 2.2 kΩ | 0402 |
-| R7, R8 | 2 | 15 kΩ | 0402 |
-| R10, R13, R14 | 3 | 10 kΩ | 0402 |
-| R11, R12 | 2 | 1 kΩ | 0402 |
-| R15, R16 | 2 | 4.7 kΩ | 0402 |
-| R17 | 1 | 10 Ω | 0402 |
-| R19 | 1 | 33 Ω | 0402 |
-| L1 | 1 | 0.47 µH (power inductor) | 2.5 × 2.0 mm |
-| FB1 | 1 | 600 Ω @ 100 MHz (ferrite bead) | 0402 |
-| FPC1 | 1 | FH12A-12S-0.5SH | 12-pin FFC |
-| U1 | 1 | ESP32-PICO-MINI-02-N8R2 | SMD module |
-| U2 | 1 | ES8388 | QFN-28 (4 × 4 mm) |
-| U3 | 1 | TPS61021A | WSON-8 (2 × 2 mm) |
-| U4 | 1 | PAM8302A | MSOP-8 |
-| U5 | 1 | LP5907MFX-3.0 | SOT-23-5 |
+| Ref(s)                         | Qty | Value / part                   | Package           |
+| ------------------------------ | --- | ------------------------------ | ----------------- |
+| C1, C2, C32–C35                | 6   | 22 µF 25 V                     | 0805              |
+| C3, C6, C8, C10, C11, C20, C24 | 7   | 10 µF                          | 0402              |
+| C4, C7, C9, C21, C25, C26, C30 | 7   | 100 nF                         | 0402              |
+| C5, C15, C16, C19, C27, C31    | 6   | 1 µF                           | 0402              |
+| C12                            | 1   | 4.7 µF                         | 0402              |
+| C13, C14                       | 2   | 10 nF C0G                      | 0402              |
+| C17, C18                       | 2   | 220 µF 6.3 V (tantalum)        | EIA-3528          |
+| C22, C23                       | 2   | 10 nF                          | 0402              |
+| C29                            | 1   | 10 pF                          | 0402              |
+| R1                             | 1   | 316 kΩ                         | 0402              |
+| R2, R9, R20, R21               | 4   | 100 kΩ                         | 0402              |
+| R3, R4                         | 2   | 2.2 kΩ                         | 0402              |
+| R7, R8                         | 2   | 15 kΩ                          | 0402              |
+| R10, R13, R14                  | 3   | 10 kΩ                          | 0402              |
+| R11, R12                       | 2   | 1 kΩ                           | 0402              |
+| R15, R16                       | 2   | 4.7 kΩ                         | 0402              |
+| R17                            | 1   | 10 Ω                           | 0402              |
+| R19                            | 1   | 33 Ω                           | 0402              |
+| L1                             | 1   | 0.47 µH (power inductor)       | 2.5 × 2.0 mm      |
+| FB1                            | 1   | 600 Ω @ 100 MHz (ferrite bead) | 0402              |
+| FPC1                           | 1   | FH12A-12S-0.5SH                | 12-pin FFC        |
+| U1                             | 1   | ESP32-PICO-MINI-02-N8R2        | SMD module        |
+| U2                             | 1   | ES8388                         | QFN-28 (4 × 4 mm) |
+| U3                             | 1   | TPS61021A                      | WSON-8 (2 × 2 mm) |
+| U4                             | 1   | PAM8302A                       | MSOP-8            |
+| U5                             | 1   | LP5907MFX-3.0                  | SOT-23-5          |
 
 ## Ordering the boards
 
@@ -109,18 +100,13 @@ The GBA's switched battery rail (about 2.4 V to 3.2 V) feeds the TPS61021A
 boost converter, which produces 3.3 V for the ESP32, the codec's digital side,
 and the speaker amp.
 
-The codec's analog supply (AVDD, and HPVDD behind R17) is its own domain as of
-rev 1.1: the 3.3 V rail passes through the ferrite (FB1) into U5, an
-LP5907MFX-3.0 low-noise LDO, which regulates a quiet 3.0 V for the codec's
-analog stages. This exists because the Bluetooth radio's wake-up bursts modulate
-the shared boost rail and were audible through both output stages on rev 1.0 —
-a periodic click from BLE advertising and a whine during pairing.
-[`PROTOTYPE-V1.0.md`](PROTOTYPE-V1.0.md) has the full diagnosis. The same fix
-pass spread five extra 22 µF bulk caps across the rail (boost output, boost
-input, ESP32, speaker amp), which also buys brown-out margin at low battery.
-
-Do not tap the GBA's 5 V rail. Loading it overloads the console's own boost
-converter. Power comes from the battery rail only.
+The codec's analog supply (AVDD, and HPVDD behind R17) is its own domain: the
+3.3 V rail passes through the ferrite (FB1) into U5, an LP5907MFX-3.0 low-noise
+LDO (~82 dB PSRR at 1 kHz), which regulates a quiet 3.0 V for the codec's analog
+stages. It isolates the codec's DAC, mixer, and headphone amp from the boost
+rail, which the Bluetooth radio's wake-up bursts modulate. Bulk caps are spread
+across the rail (boost output, boost input, ESP32, speaker amp) for brown-out
+margin at low battery.
 
 ## The audio source
 
@@ -130,35 +116,6 @@ to live inside the amp chip you are removing, so the mod includes its own
 reconstruction low-pass filter at the tap. The filtered signal feeds the codec's
 line inputs. The codec's input range suits this signal directly, so there is no
 preamp.
-
-## Headphone-detect polarity
-
-The GBA's headphone jack grounds the detect line when nothing is plugged in,
-which is the opposite of most jacks. With the pull-up on the board, the ESP32
-reads the line HIGH when a plug is present and LOW when it is not. The firmware
-already accounts for this.
-
-## The grounding rule
-
-This is the one thing that is easy to get wrong and hard to debug, so read it
-before you wire anything.
-
-The mod has one main ground, GND (the GBA main ground and battery negative). It
-carries the power, the digital signals, and the switching return current from
-the boost converter, the Class-D amp, and the Bluetooth radio. It also carries
-the codec and audio reference. A second net, AGND, is the headphone sleeve
-return, brought in from the freed CP4 pad.
-
-- GND and AGND meet at exactly one star point on the main board. Do not join
-  them anywhere else.
-- Keep AGND as its own conductor all the way back to that star point.
-- On GND, route the codec's analog-reference branch locally, and let the
-  switching return currents join near the star point, so switching current never
-  flows through the quiet reference.
-
-GND and the battery rail reach the main board through the flex. The control
-button signal (the R shoulder net) rides the flex too. The two speaker leads are
-the only separate wires.
 
 ## Installing the mod
 

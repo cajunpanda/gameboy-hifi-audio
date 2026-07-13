@@ -261,10 +261,9 @@ void app_main(void)
     // passthrough, so the user hears one full chime instead of the truncated live
     // GBA chime (the codec/amp miss its first ~0.9 s of boot). dsp_begin_intro()
     // mutes the passthrough until the clip ends; sfx_trigger_clip() streams it.
-    // Gated on sfx_enabled for now; a future phase adds a dedicated "startup chime"
-    // setting so the user can turn this off and let the GBA's own chime play through
-    // -- which is simply this block NOT running (the passthrough already carries the
-    // real chime). Both calls run before audio_pipeline_start(), i.e. before the
+    // Gated on sfx_enabled: with cues off, this block does not run and the GBA's
+    // own chime plays through untouched (the passthrough already carries the real
+    // chime). Both calls run before audio_pipeline_start(), i.e. before the
     // audio task exists, so the passthrough is muted from its first block.
     // Voice the startup chime only on a genuine power cycle. Every other reset --
     // a Mode A/B change reboot (esp_restart, ESP_RST_SW), a watchdog, a brownout --

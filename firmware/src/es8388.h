@@ -19,8 +19,7 @@
 // The codec must be configured with MCLK live (its state machine won't start
 // otherwise). MCLK (~22.6 MHz at the pin) can couple into SDA/SCL, but on the
 // production PCB the ~150 ohm series R on MCLK + short MCLK routing keep the I2C
-// writes clean, so es8388_init() alone configures reliably. (A read-back verify
-// pass existed for the noisy breadboard bring-up; the PCB doesn't need it.)
+// writes clean, so es8388_init() alone configures reliably (no read-back verify).
 
 // Mode A vs Mode B. Orthogonal to which output the headphone jack selects.
 typedef enum {

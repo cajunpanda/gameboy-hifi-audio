@@ -63,8 +63,8 @@ gives up, and waits for you to hold R again, if it cannot get them back after a
 short while.
 
 If you prefer the mod to reconnect to your saved headphones automatically the
-moment you power on (the way it used to work), that is available as a saved
-option. It is off by default so the radio stays quiet until you ask for it.
+moment you power on, that is available as a saved option. It is off by default so
+the radio stays quiet until you ask for it.
 
 ## Wired headphones and the speaker
 
@@ -97,6 +97,27 @@ headphones: switching to Battery saver stops the search right away and does not
 make you wait. In Battery saver there is no chime menu, so to leave it just hold
 R for about 9 seconds; the equalizer audio coming back and a chime tell you it
 switched.
+
+## Battery life
+
+The mod runs off the GBA's battery rail, so it adds to the console's draw. Rough
+runtimes on a fresh pair of AA alkaline cells, listening on the speaker:
+
+| What you are doing | Runtime |
+| --- | --- |
+| Full mode, local speaker/headphones | ~13 hours |
+| Battery saver, local speaker/headphones | ~14 hours |
+| Bluetooth streaming | ~9 hours |
+
+Bluetooth is by far the heaviest mode, because the radio draws current in bursts;
+if you are not using it, Full mode on the speaker or wired jack lasts much longer,
+and Battery saver stretches it a little further still.
+
+These figures are for a stock GBA. If your console has a backlit **IPS screen
+mod**, the backlight is the single biggest drain — more than the audio mod — and
+it roughly halves every number above (expect about 5 hours of Bluetooth
+streaming). Turning the screen brightness down is the most effective way to get
+that time back.
 
 ## The web config page
 

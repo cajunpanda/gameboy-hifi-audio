@@ -38,35 +38,9 @@ regenerate. Adding a new `CONFIG_*` symbol in `Kconfig.projbuild` also needs
 that delete plus a rebuild, otherwise the build reports the symbol as
 undeclared.
 
-## serial-proxy (global skill)
-
-`pio device monitor` needs a real terminal. For scripted work, or to avoid
-fighting over the serial port, use the **serial-proxy skill** — a generic bench
-tool that lives outside this repo at
-`~/.claude/skills/serial-proxy/serial_proxy.py` (alias it as `serial_proxy` for
-brevity). It owns the stable `/dev/serial/by-id/*` port, tees everything to
-`/tmp/serial_proxy.log`, and survives the board reconnecting.
-
-```sh
-SP=~/.claude/skills/serial-proxy/serial_proxy.py
-python3 $SP monitor --port FTDI       # start the proxy (run once; pick the FTDI adapter)
-tail -f /tmp/serial_proxy.log         # watch the output
-python3 $SP flash --env prod          # pause, build, upload, resume (run from the repo)
-python3 $SP flash --env prod --fs     # ...and reflash the clip image
-python3 $SP reset
-python3 $SP stop
-```
-
-`flash` auto-detects this project's `firmware/platformio.ini` when run from the
-repo (or pass `--fw-dir firmware`). `--port FTDI` is needed here because the
-bench also enumerates the DPS-150 supply as a serial adapter.
-
-The `flash` subcommand pauses the proxy, builds and uploads, then resumes and
-resets the board, so you do not have to release and reclaim the port by hand.
-Add `--fs` when you have changed anything under `firmware/data/` (e.g. the startup
-chime): it also builds the LittleFS `storage` image and writes it to its partition
-offset, which a plain `flash` (app only) leaves stale. See "Partitions and the
-clip image" below.
+`pio run -t upload` flashes only the app. It does not write the LittleFS clip
+image, so a change under `firmware/data/` needs a separate filesystem flash (see
+"Partitions and the clip image" below).
 
 ## Configuration
 
@@ -93,21 +67,18 @@ Bluetooth bonds, and a LittleFS `storage` partition for sound clips.
 
 `pio run -t upload` flashes only the app. It does not flash the LittleFS clip
 image, so a plain flash leaves whatever clips were already on the board. The
-easiest way to (re)load the clips in `firmware/data/` is:
+build bakes `firmware/data/` into a `storage.bin` image (the `src/CMakeLists.txt`
+`littlefs_create_partition_image(... FLASH_IN_PROJECT)` line owns the exact
+fs-size / block-size / name-max the firmware mounts with). To (re)load the clips,
+build and write that image to the `storage` partition offset:
 
 ```sh
-python3 ~/.claude/skills/serial-proxy/serial_proxy.py flash --env prod --fs
-```
-
-`--fs` builds the `littlefs_storage_bin` target (which owns the exact
-fs-size / block-size / name-max the firmware mounts with) and writes the image to
-the `storage` offset read from `flasher_args.json` (currently `0x420000`). To do
-it by hand instead:
-
-```sh
-# build the image via the target, then:
+pio run                                              # bakes .pio/build/prod/storage.bin
 esptool.py write_flash 0x420000 .pio/build/prod/storage.bin
 ```
+
+The `storage` offset (`0x420000`) comes from `partitions.csv`; the generated
+`flasher_args.json` lists it too.
 
 The first flash on a fresh board must be a full cabled flash: bootloader,
 partition table, app into the first slot, an erased otadata, and the clip image.
@@ -117,8 +88,8 @@ The clips themselves are in the GSFX format. Use `tools/make_clip.py` to author
 them: `from-wav` converts a 16-bit WAV to a clip (downmix + optional resample),
 or `gen-startup` generates a synth test cue. `startup.gsfx` is the boot chime the
 mod plays over a muted passthrough (see "Init order"); to replace it, author a new
-`firmware/data/startup.gsfx` and reflash with `--fs`. The web config page can also
-upload clips to a running board.
+`firmware/data/startup.gsfx` and reflash the filesystem image (see "Partitions and
+the clip image"). The web config page can also upload clips to a running board.
 
 ## Source layout
 
@@ -194,12 +165,10 @@ block BT), parks the speaker amp (`app_sm_amp_radio_quiet()`) across the radio
 window, then runs `bt_a2d_init()` (controller + radio) and the BLE config server.
 This serialization exists because the radio bring-up is the largest, fastest
 current step of the whole boot and on a low battery it can sag the boost rail
-below the brownout threshold (see PROTOTYPE-V1.0.md for the hardware analysis).
-Three more pieces of that fix live in firmware:
+below the brownout threshold. Three more pieces of that guard live in firmware:
 
 - `CONFIG_ESP_PHY_RF_CAL_NONE=y` (sdkconfig.defaults) — skips the boot-time
-  partial RF calibration TX bursts and runs from NVS-stored cal data. This was
-  the decisive change; the sequencing alone didn't survive a 2.4 V rail. Caveat:
+  partial RF calibration TX bursts and runs from NVS-stored cal data. Caveat:
   the first boot after an NVS erase runs a *full* cal (bigger spike), where the
   loop breaker below is the safety net.
 - **BR/EDR TX capped at -3 dBm right after controller enable** (bt_a2d.c), so
@@ -213,13 +182,12 @@ Three more pieces of that fix live in firmware:
   loop). A real power cycle scrambles RTC noinit and re-arms BT. All public
   `bt_a2d_*` calls no-op safely on a BT-skipped boot.
 
-Verified on the bench cold-booting at 2.4 / 2.2 / 2.0 V. Finally the
-factory-reset check, the state machine, and the console start. The order
-matters; read the comments in `main.c` before reordering anything.
+This sequence cold-boots cleanly down to a 2.0 V rail, below any usable 2xAA
+level. Finally the factory-reset check, the state machine, and the console start.
+The order matters; read the comments in `main.c` before reordering anything.
 
-There is no codec read-back verify pass. It existed for the noisy breadboard
-bring-up; the production PCB's series-R + short MCLK routing keep the I2C config
-writes clean, so `es8388_init()` alone is enough.
+There is no codec read-back verify pass: the production PCB's series-R + short
+MCLK routing keep the I2C config writes clean, so `es8388_init()` alone is enough.
 
 ### State machine
 

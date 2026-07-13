@@ -13,9 +13,9 @@ merges them; it contains no serial-port or instrument code itself. Swap in any o
 timestamped serial monitor or any other bench-supply logger and this still works.
 
 Prereqs:
-  1. A serial monitor writing an epoch-stamped log, e.g. the serial-proxy skill:
-        ~/.claude/skills/serial-proxy/serial_proxy.py monitor --port FTDI --timestamp &
-  2. dps150.py (the PSU tool) reachable: --dps PATH, or $DPS150_BIN, or the default below.
+  1. A serial monitor writing an epoch-stamped log, e.g.:
+        serial_proxy.py monitor --port FTDI --timestamp &
+  2. A bench-supply logger (dps150.py) reachable: --dps PATH, or $DPS150_BIN, or on PATH.
 
 Usage:
   tools/bringup.py [--volts 3.2] [--ilimit 1.5] [--baseline 1.5] [--duration 11]
@@ -29,10 +29,10 @@ import sys
 import threading
 import time
 
-# Both building blocks are generic global skills; this repo just orchestrates them.
-PROXY = os.environ.get("SERIAL_PROXY_BIN",
-                       os.path.expanduser("~/.claude/skills/serial-proxy/serial_proxy.py"))
-DEFAULT_DPS = os.environ.get("DPS150_BIN", os.path.expanduser("~/.claude/skills/dps150/dps150.py"))
+# Both building blocks are generic bench tools; this script only orchestrates them.
+# Point $SERIAL_PROXY_BIN / $DPS150_BIN at your own, or keep them on PATH.
+PROXY = os.environ.get("SERIAL_PROXY_BIN", "serial_proxy.py")
+DEFAULT_DPS = os.environ.get("DPS150_BIN", "dps150.py")
 DEFAULT_LOG = os.environ.get("SERIAL_PROXY_LOG", "/tmp/serial_proxy.log")
 STAMP = re.compile(r"^\[(\d+(?:\.\d+)?)\]\s?(.*)$")
 

@@ -26,15 +26,9 @@ cd firmware
 pio run                          # build
 pio run -t upload                # flash
 pio run -t upload -t monitor     # flash + monitor
+pio device monitor               # serial monitor only (115200 8N1)
 pio run -t menuconfig            # IDF menuconfig
 ```
-
-`pio device monitor` needs a TTY, which a sandboxed agent shell usually lacks.
-Use the **serial-proxy skill** instead (`~/.claude/skills/serial-proxy/serial_proxy.py`,
-a generic global tool — no longer in this repo): `monitor --port FTDI` starts it, `tail -f
-/tmp/serial_proxy.log` watches it, `flash --env prod` builds and uploads (run it from the
-repo so it finds `firmware/platformio.ini`). Never `pkill -f`/`pgrep -f` the proxy (the
-`-f` match kills the shell); use the `stop` subcommand.
 
 `sdkconfig.defaults` is the source of truth. The generated `sdkconfig.prod`
 is not checked in; delete it to regenerate. Adding a new `CONFIG_*` needs that
@@ -59,9 +53,9 @@ delete plus a rebuild.
   server call `settings_*`/`sfx_*` and never touch the audio path. Keep that.
 - `pinmap.h` is the single source of truth for GPIOs. Do not hard-code pin
   numbers anywhere else.
-- `pio run -t upload` does not flash the LittleFS clip image. Build
-  `littlefs_storage_bin` and write it to the `storage` offset in
-  `partitions.csv`.
+- `pio run -t upload` does not flash the LittleFS clip image. A build bakes
+  `firmware/data/` into `storage.bin`; write it to the `storage` offset from
+  `partitions.csv` with `esptool.py write_flash`.
 
 ## Style
 

@@ -20,6 +20,12 @@ firmware/dependencies.lock
 *.swo
 .DS_Store
 
+# Development history, bring-up notes, and war stories (not part of the public repo)
+history/
+
+# Third-party reference material (e.g. the GBA mainboard schematic)
+hardware/agb/references/
+
 # KiCad generated / per-user / IDE noise
 hardware/**/*-backups/
 hardware/**/.history/

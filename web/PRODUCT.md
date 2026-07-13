@@ -35,7 +35,7 @@ copy — never kitsch pixel-green.
 ## Anti-references
 
 - Kitschy retro: DMG pea-green everything, pixel fonts, chiptune skeuomorphism.
-- Generic dark-neon "gamer" dashboards (the violet/RGB default this started as).
+- Generic dark-neon "gamer" dashboards.
 - SaaS-cream, glassmorphism, gradient-and-glow decoration.
 - Marketing scaffolding: tracked uppercase eyebrows, hero-metric templates,
   over-decorated glossy buttons.
