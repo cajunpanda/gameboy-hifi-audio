@@ -24,6 +24,12 @@ What you get:
   through the codec in analog, for long unplugged sessions.
 - Firmware updates over Bluetooth.
 
+<p align="center">
+  <img src="docs/images/web-config-demo.gif" alt="The web config page: live spectrum and equalizer, tuned in the browser over Bluetooth" height="420">
+  <br>
+  <sub>The browser config page: a live spectrum and per-output EQ, tuned over Bluetooth with no app to install</sub>
+</p>
+
 Prebuilt, pre-assembled kits are coming soon at [cajunpanda.com](https://cajunpanda.com),
 for anyone who would rather not source the parts and solder it themselves. Kits will ship
 pre-flashed and update over Bluetooth, so they need no programming cable.

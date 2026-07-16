@@ -100,24 +100,25 @@ switched.
 
 ## Battery life
 
-The mod runs off the GBA's battery rail, so it adds to the console's draw. Rough
-runtimes on a fresh pair of AA alkaline cells, listening on the speaker:
+The mod runs off the GBA's battery rail, so it adds to the console's draw. The
+current column below is the extra draw the mod puts on the battery, measured at
+the battery terminals; it shifts a little with pack voltage. The runtimes are
+rough figures on a fresh pair of AA alkaline cells, listening on the speaker.
 
-| What you are doing | Runtime |
-| --- | --- |
-| Full mode, local speaker/headphones | ~13 hours |
-| Battery saver, local speaker/headphones | ~14 hours |
-| Bluetooth streaming | ~9 hours |
+| What you are doing | Extra current from the mod | Runtime |
+| --- | --- | --- |
+| Full mode, local speaker/headphones | ~80 mA | ~13 hours |
+| Battery saver, local speaker/headphones | ~30 mA | ~14 hours |
+| Bluetooth streaming | ~200 mA | ~9 hours |
 
 Bluetooth is by far the heaviest mode, because the radio draws current in bursts;
 if you are not using it, Full mode on the speaker or wired jack lasts much longer,
 and Battery saver stretches it a little further still.
 
 These figures are for a stock GBA. If your console has a backlit **IPS screen
-mod**, the backlight is the single biggest drain — more than the audio mod — and
-it roughly halves every number above (expect about 5 hours of Bluetooth
-streaming). Turning the screen brightness down is the most effective way to get
-that time back.
+mod**, the backlight draws more than the audio mod does, and it roughly halves
+every number above (expect about 5 hours of Bluetooth streaming). Turning the
+screen brightness down is the most effective way to get that time back.
 
 ## The web config page
 
@@ -140,6 +141,22 @@ Then:
    move them.
 4. Click Save to device to keep the changes after a power cycle.
 
+<p align="center">
+  <img src="images/web-config-connect.png" alt="The connect screen" height="360">
+  &nbsp;&nbsp;
+  <img src="images/web-config-tune.png" alt="The Tune tab, with a live spectrum and the speaker equalizer" height="360">
+  <br>
+  <sub>Connect over Bluetooth (left). Once paired, the Tune tab shows a live spectrum and the equalizer (right).</sub>
+</p>
+
+The equalizer updates as you drag it, so each change is audible right away:
+
+<p align="center">
+  <img src="images/web-config-eq.gif" alt="Dragging the bass, mid, and treble sliders" height="200">
+  <br>
+  <sub>Bass, mid, and treble, each adjustable live.</sub>
+</p>
+
 From the page you can set:
 
 - Speaker volume and Bluetooth volume.
@@ -151,6 +168,14 @@ From the page you can set:
 - Firmware updates: push a new firmware file to the mod over Bluetooth. Keep
   the page open until it reboots. Audio pauses for a minute or two during the
   update.
+
+<p align="center">
+  <img src="images/web-config-device.png" alt="The Device tab: modes, sound cues, and R-button hold times" height="360">
+  &nbsp;&nbsp;
+  <img src="images/web-config-system.png" alt="The System tab: firmware updates and the device console" height="360">
+  <br>
+  <sub>Device tab: modes, sound cues, and the R-button hold times (left). System tab: firmware updates (right).</sub>
+</p>
 
 ## Factory reset
 

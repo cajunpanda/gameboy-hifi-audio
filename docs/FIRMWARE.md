@@ -275,6 +275,16 @@ GitHub Pages by `.github/workflows/pages.yml` on any push that touches `web/`.
 Web Bluetooth needs a secure context, which the Pages HTTPS provides. The page
 reads and writes the settings, uploads clips, and pushes firmware updates.
 
+The System tab mirrors the UART REPL: it streams the device log and takes the
+same console commands (`help`, `get`, `batt`, `nr`, ...), so you can watch and
+poke a running board over BLE with no cable.
+
+<p align="center">
+  <img src="images/web-config-console.png" alt="The System tab device console: live log and command input over BLE" height="420">
+  <br>
+  <sub>The System tab's device console: the live log and the same commands as the wired console, over Bluetooth.</sub>
+</p>
+
 ## OTA updates
 
 The firmware can update itself over Bluetooth. The web page pushes a new

@@ -50,3 +50,7 @@ tools/.venv/
 
 # Claude Code local state
 .claude/
+
+# Scratch media and browser-automation artifacts
+scratch-media/
+.playwright-cli/
