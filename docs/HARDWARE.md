@@ -21,6 +21,14 @@ There are two boards for the AGB:
   and the control-button signal back to the main board. It folds over once
   during installation.
 
+<p align="center">
+  <img src="images/main-board-top.png" alt="AGB main board, top" height="300">
+  &nbsp;&nbsp;
+  <img src="images/main-board-bottom.png" alt="AGB main board, bottom" height="300">
+  <br>
+  <sub>Main board, top (left) and bottom (right)</sub>
+</p>
+
 ## Key parts
 
 The bill of materials lives in the KiCad schematic itself (the source of truth),
