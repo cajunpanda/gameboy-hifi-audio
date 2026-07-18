@@ -765,15 +765,15 @@ static void enter(app_state_t next)
         ESP_LOGI(TAG, "Mode A set up; analog bypass, digital path stopped; entering light sleep");
         break;
     case ST_OTA:
-        // Quiesce the audio path before any flash work. The esp_ota_begin() erase
-        // (~hundreds of ms with the cache disabled) plus the chunk writes would
-        // otherwise starve the SBC encoder and garble the local DAC. Order: drop
-        // A2DP, stop the pipeline (parks the task + stops I2S), mute the speaker amp
-        // (pam_apply above would have unmuted it; re-mute for the flash). The BLE
-        // controller runs from IRAM, so the OTA link itself survives the
-        // cache-disable. Then ble_config_ota_proceed() does the erase + READY and
-        // the transfer runs on the Bluedroid task. The codec stays in DSP mode
-        // untouched, so an abort just needs the pipeline back.
+        // Quiesce the audio path before any flash work. The per-sector erases and
+        // chunk writes (flash cache disabled) would otherwise starve the SBC
+        // encoder and garble the local DAC. Order: drop A2DP, stop the pipeline
+        // (parks the task + stops I2S), mute the speaker amp (pam_apply above
+        // would have unmuted it; re-mute for the flash). The BLE controller runs
+        // from IRAM, so the OTA link itself survives the cache-disable. Then
+        // ble_config_ota_proceed() does esp_ota_begin() + READY and the transfer
+        // runs on the Bluedroid task. The codec stays in DSP mode untouched, so
+        // an abort just needs the pipeline back.
         bt_a2d_disconnect();
         audio_pipeline_stop();
         pam_set_unmuted(false);

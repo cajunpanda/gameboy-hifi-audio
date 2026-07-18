@@ -465,12 +465,11 @@ static void ota_cleanup(bool fire_cb)
     if (fire_cb && was_busy && s_ota_cb) s_ota_cb(BLE_OTA_EV_FINISHED);
 }
 
-// Widen the BLE link's supervision timeout before the transfer. esp_ota_begin()
-// erases the whole target slot (~4 s for a 1.2 MB image, flash cache disabled),
-// during which the Bluedroid host can't service the link; with the default
-// supervision timeout the central drops us (disconnect reason 0x08) before READY
-// is even sent. An 8 s supervision timeout outlasts the erase; a modest 15-30 ms
-// interval keeps the data phase reasonably fast.
+// Widen the BLE link's supervision timeout before the transfer. The slot erase
+// is deferred into the chunk writes (OTA_WITH_SEQUENTIAL_WRITES in
+// ble_config_ota_proceed), so there is no long radio-starving window left to
+// outlast; the wider timeout is margin for per-sector erase/write stalls during
+// the transfer, and the 15-30 ms interval keeps the data phase reasonably fast.
 static void ota_widen_link(void)
 {
     esp_ble_conn_update_params_t p = {0};
@@ -484,8 +483,8 @@ static void ota_widen_link(void)
 }
 
 // OTACTL BEGIN: stash size/crc, widen the link, ask app_sm to quiesce. The real
-// esp_ota_begin() runs later in ble_config_ota_proceed() (so the erase can't
-// garble live audio, and so the supervision-timeout update has time to apply).
+// esp_ota_begin() runs later in ble_config_ota_proceed(), so no flash work can
+// garble audio that is still live.
 static void ota_handle_begin(const uint8_t *v, uint16_t len)
 {
     if (len < 9) { ota_error(1, "short begin"); return; }
@@ -504,14 +503,19 @@ esp_err_t ble_config_ota_proceed(void)
 {
     if (!s_ota_pending) return ESP_OK;   // request already timed out / aborted
     s_ota_pending = false;
-    // Let the widened supervision timeout (ota_widen_link, requested at BEGIN)
-    // actually take effect before we block the host on the erase. Audio is
-    // already stopped, so this delay is free.
-    vTaskDelay(pdMS_TO_TICKS(500));
     s_ota_part = esp_ota_get_next_update_partition(NULL);
     if (!s_ota_part) { ota_error(2, "no ota slot"); ota_cleanup(true); return ESP_FAIL; }
-    ESP_LOGI(TAG, "OTA: erasing %s for %u bytes", s_ota_part->label, (unsigned)s_ota_size);
-    esp_err_t e = esp_ota_begin(s_ota_part, s_ota_size, &s_ota_handle);
+    ESP_LOGI(TAG, "OTA: %s ready for %u bytes", s_ota_part->label, (unsigned)s_ota_size);
+    // OTA_WITH_SEQUENTIAL_WRITES, never s_ota_size: passing a size makes
+    // esp_ota_begin() erase the whole slot up front (~4 s on a slot holding the
+    // old image), starving the radio long enough for a central with a short
+    // supervision timeout to drop the link before READY is sent -- BlueZ's
+    // 720 ms default hits this even when ota_widen_link() has been requested,
+    // since the central is not obliged to apply the new parameters in time.
+    // The flag defers erasing to esp_ota_write(), one sector at a time,
+    // interleaved with the incoming chunks. It requires writes in continuous
+    // sequence, which the windowed protocol guarantees.
+    esp_err_t e = esp_ota_begin(s_ota_part, OTA_WITH_SEQUENTIAL_WRITES, &s_ota_handle);
     if (e != ESP_OK) { ota_error(3, esp_err_to_name(e)); ota_cleanup(true); return e; }
     s_ota_active   = true;
     s_ota_recv = s_ota_acked = s_ota_crc = 0;

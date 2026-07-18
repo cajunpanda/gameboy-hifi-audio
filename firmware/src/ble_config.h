@@ -40,10 +40,10 @@ void ble_config_set_ota_cb(ble_ota_event_cb_t cb);
 
 // Called by app_sm once the audio path is quiesced (pipeline stopped, A2DP
 // dropped) in response to BLE_OTA_EV_BEGIN_REQUEST: selects the inactive OTA
-// slot, esp_ota_begin()s it (the multi-hundred-ms erase happens here), and
-// notifies the client READY so it starts streaming chunks. No-op (ESP_OK) if no
-// begin is pending (e.g. the request already timed out). Returns the
-// esp_ota_begin() result.
+// slot, esp_ota_begin()s it (sector erases are deferred into the chunk writes,
+// so this returns fast), and notifies the client READY so it starts streaming
+// chunks. No-op (ESP_OK) if no begin is pending (e.g. the request already timed
+// out). Returns the esp_ota_begin() result.
 esp_err_t ble_config_ota_proceed(void);
 
 // Start/stop BLE advertising. The `radio off` console command uses this to silence
