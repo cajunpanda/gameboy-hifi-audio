@@ -48,8 +48,13 @@ static float s_nr_w_hpf[2][2], s_nr_w_lpf[2][2], s_nr_w_notch[2][2];
 static bool  s_nr_hpf_on, s_nr_lpf_on, s_nr_notch_on;
 
 // Downward expander / noise gate on the local path. Envelope from each block's
-// post-EQ peak; the applied gain ramps per sample with a fast attack, slow release
-// so the floor fades out in quiet passages without chattering. Off when threshold 0.
+// post-EQ RMS -- not peak: BLE TX bursts couple sub-ms clicks into the ADC that
+// peak up to ~-37 dBFS (above any usable threshold) but carry almost no block
+// energy (RMS <= -45 dBFS), while real program holds RMS near its peak (square
+// waves have ~no crest factor). RMS keying gates the clicks and lets the amp
+// mute engage; peak keying let every click punch through and reset the mute
+// hold. Applied gain ramps per sample with a fast attack, slow release so the
+// floor fades out in quiet passages without chattering. Off when threshold 0.
 #define GATE_ATTACK   0.02f       // ~1 ms to open
 #define GATE_RELEASE  0.0004f     // ~55 ms to close
 #define GATE_MUTE_HOLD 24         // ~140 ms of sustained silence before amp mute
@@ -77,10 +82,11 @@ static float s_bt_gate_gain   = 1.0f;   // smoothed applied gain
 // path's expander/amp-mute, for two reasons: (1) the SBC encoder renders even a
 // few-dB residual floor as audible digital hash, so BT must reach true digital
 // silence where the local analog path tolerates a low floor; (2) during A2DP
-// streaming the radio's conducted TX transients lift the per-block floor peak up
-// to ~the local gate threshold, so the shared silence detector never commits --
-// this threshold sits clear of the floor + those transients. Below it for
-// GATE_MUTE_HOLD blocks, the BT program is driven to digital zero.
+// streaming the radio's conducted TX transients lift the captured floor toward
+// the local gate threshold (they no longer defeat the detector outright now
+// that it keys on RMS, but the margin is thin) -- this threshold sits clear of
+// the floor + those transients. Below it for GATE_MUTE_HOLD blocks, the BT
+// program is driven to digital zero.
 #define BT_MUTE_THRESH_DB   -30.0f
 static int s_bt_gate_silence = 0;   // consecutive below-threshold blocks (BT mute hold)
 
@@ -309,42 +315,51 @@ void dsp_process_local(int16_t *stereo, size_t frames)
         dsps_biquad_f32(r, r, frames, s_coef_treble, s_w_treble[1]);
     }
 
-    // Noise gate: derive this block's target gain from its post-EQ peak (a 2:1
+    // Noise gate: derive this block's target gain from its post-EQ RMS (a 2:1
     // downward expander below the threshold, floored at -range), then ramp the
-    // applied gain per sample below. The program is gated; the cue is not.
+    // applied gain per sample below. RMS, not peak -- see the gate note by
+    // GATE_ATTACK. The program is gated; the cue is not.
     bool silent_block = false;
     if (s_gate_on) {
-        float pk = 0.0f;
-        for (size_t i = 0; i < frames; i++) {
-            float a = fabsf(l[i]); if (a > pk) pk = a;
-            a = fabsf(r[i]);       if (a > pk) pk = a;
-        }
-        float pk_db = (pk > 1.0f) ? 20.0f * log10f(pk / 32768.0f) : -120.0f;
-        float g_db  = (pk_db >= s_gate_thresh_db) ? 0.0f
-                      : fmaxf(-s_gate_range_db, 2.0f * (pk_db - s_gate_thresh_db));
+        float sq = 0.0f;
+        for (size_t i = 0; i < frames; i++)
+            sq += l[i] * l[i] + r[i] * r[i];
+        float rms    = sqrtf(sq / (float)(frames * 2));
+        float rms_db = (rms > 1.0f) ? 20.0f * log10f(rms / 32768.0f) : -120.0f;
+        float g_db   = (rms_db >= s_gate_thresh_db) ? 0.0f
+                       : fmaxf(-s_gate_range_db, 2.0f * (rms_db - s_gate_thresh_db));
         s_gate_target = db_to_lin(g_db);
-        silent_block  = pk_db < s_gate_thresh_db;   // input at/under the noise floor
+        silent_block  = rms_db < s_gate_thresh_db;  // input at/under the noise floor
     } else {
         s_gate_target = 1.0f;
     }
 
-    // Speaker-amp mute follows sustained silence -- input below the threshold, not
-    // how deep the expander attenuates -- so it fires even when the floor sits only
-    // a few dB down. Mute after GATE_MUTE_HOLD quiet blocks; release the instant a
-    // block exceeds the threshold. app_sm (owns PIN_PAM_SD) is called only on change.
-    if (silent_block) { if (s_gate_silence < GATE_MUTE_HOLD) s_gate_silence++; }
-    else                s_gate_silence = 0;
-    if (s_gate_mute_cb) {
-        bool m = (s_gate_silence >= GATE_MUTE_HOLD);
-        if (m != s_gate_muting) { s_gate_muting = m; s_gate_mute_cb(m); }
-    }
-
-    // Digital volume (perceptual squared curve, smoothed once per frame so both
-    // channels share the same gain) applied to the program only, then the shared
-    // SFX cue mix (mono cue into both channels, post-volume, fixed level so cues
-    // stay audible regardless of volume). The cue was rendered once for this block
-    // by sfx_generate_block(); the BT path mixes the same samples.
+    // The shared SFX cue mix for this block (mono cue into both channels,
+    // post-volume, fixed level so cues stay audible regardless of volume). The
+    // cue was rendered once for this block by sfx_generate_block(); the BT path
+    // mixes the same samples. Fetched before the mute logic: the amp-mute must
+    // see it.
     const float *cue = (s_sfx_gain > 0.0f && sfx_cue_active()) ? sfx_cue() : NULL;
+
+    // Speaker-amp mute follows sustained *output* silence: program below the
+    // threshold (not how deep the expander attenuates -- so it fires even when
+    // the floor sits only a few dB down) AND no cue mixing in. The cue check
+    // matters: cues bypass the gate, but the PAM shutdown is physical -- a chime
+    // fired into a muted amp on an idle page is simply inaudible. Mute after
+    // GATE_MUTE_HOLD quiet blocks; release the instant a block exceeds the
+    // threshold or a cue starts. app_sm (owns PIN_PAM_SD) is called only on change.
+    if (silent_block && !cue) { if (s_gate_silence < GATE_MUTE_HOLD) s_gate_silence++; }
+    else                        s_gate_silence = 0;
+    bool muted = (s_gate_silence >= GATE_MUTE_HOLD);
+    if (s_gate_mute_cb && muted != s_gate_muting) {
+        s_gate_muting = muted;
+        s_gate_mute_cb(muted);
+    }
+    // While the amp is muted, drive the program to digital zero too: the HP amp
+    // (LOUT1) has no shutdown pin, so without this a headphone listener still
+    // hears the expander's -range residual -- including the BLE TX clicks --
+    // through an idle page. Released the same block the silence counter resets.
+    if (muted) s_gate_target = 0.0f;
 
     // Startup-chime intro latch (once per block): hold the passthrough muted until
     // the startup clip finishes -- cue inactive for INTRO_END_GAP blocks after it
@@ -361,6 +376,9 @@ void dsp_process_local(int16_t *stereo, size_t frames)
         intro_target = s_intro_active ? 0.0f : 1.0f;
     }
 
+    // Digital volume (perceptual squared curve, smoothed per sample so both
+    // channels share the same gain) applies to the program only; the cue mixes
+    // in post-volume at its fixed level.
     for (size_t i = 0; i < frames; i++) {
         s_cur_gain += (s_vol_target - s_cur_gain) * VOL_SMOOTH;
         float gc = (s_gate_target > s_gate_gain) ? GATE_ATTACK : GATE_RELEASE;
@@ -433,18 +451,18 @@ void dsp_process_bt(int16_t *stereo, size_t frames)
     }
 
     // Noise gate: same downward-expander law as the local path (target from this
-    // block's post-EQ peak), its own smoothed gain. Fades the program to silence
-    // in quiet passages so the encoder sees true silence instead of the low-level
-    // floor. No amp-mute side effect -- that is the local speaker's concern.
+    // block's post-EQ RMS -- not peak, see the gate note by GATE_ATTACK), its own
+    // smoothed gain. Fades the program to silence in quiet passages so the
+    // encoder sees true silence instead of the low-level floor. No amp-mute side
+    // effect -- that is the local speaker's concern.
     if (s_gate_on) {
-        float pk = 0.0f;
-        for (size_t i = 0; i < frames; i++) {
-            float a = fabsf(l[i]); if (a > pk) pk = a;
-            a = fabsf(r[i]);       if (a > pk) pk = a;
-        }
-        float pk_db = (pk > 1.0f) ? 20.0f * log10f(pk / 32768.0f) : -120.0f;
-        float g_db  = (pk_db >= s_gate_thresh_db) ? 0.0f
-                      : fmaxf(-s_gate_range_db, 2.0f * (pk_db - s_gate_thresh_db));
+        float sq = 0.0f;
+        for (size_t i = 0; i < frames; i++)
+            sq += l[i] * l[i] + r[i] * r[i];
+        float rms    = sqrtf(sq / (float)(frames * 2));
+        float rms_db = (rms > 1.0f) ? 20.0f * log10f(rms / 32768.0f) : -120.0f;
+        float g_db   = (rms_db >= s_gate_thresh_db) ? 0.0f
+                       : fmaxf(-s_gate_range_db, 2.0f * (rms_db - s_gate_thresh_db));
         s_bt_gate_target = db_to_lin(g_db);
         // Sustained silence below the BT mute threshold: hard-mute to true digital
         // zero rather than the expander's partial floor, so the encoder sees actual
@@ -452,7 +470,7 @@ void dsp_process_bt(int16_t *stereo, size_t frames)
         // (see BT_MUTE_THRESH_DB) so it fires on the low-level GBA floor -- which
         // parks near the local gate threshold and, with the TX transients, never
         // trips the shared silence detector -- independently of the local amp-mute.
-        if (pk_db < BT_MUTE_THRESH_DB) {
+        if (rms_db < BT_MUTE_THRESH_DB) {
             if (s_bt_gate_silence < GATE_MUTE_HOLD) s_bt_gate_silence++;
         } else {
             s_bt_gate_silence = 0;
