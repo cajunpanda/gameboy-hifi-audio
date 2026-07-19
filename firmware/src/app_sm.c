@@ -114,7 +114,6 @@ typedef enum {
     EV_RECONNECT_TICK,      // reconnect retry tick (CONFIG_GBHIFI_RECONNECT_TICK_S)
     EV_FORCE_SLEEP,         // force DEEP_IDLE (console `sleep` wake-reliability test only)
     EV_PAIRING_SESSION_TIMEOUT, // pairing-mode session elapsed (CONFIG_GBHIFI_PAIRING_TIMEOUT_S)
-    EV_POLL,                // ~200 ms housekeeping tick: VOL wheel + mode-change check
     EV_MODE_CHANGE,         // desired (settings.mode_a) != active mode, transition
     EV_OTA_BEGIN,           // BLE client wants to flash: quiesce + enter ST_OTA
     EV_OTA_END,             // OTA ended without reboot (abort/error/disconnect): resume
@@ -127,7 +126,6 @@ static QueueHandle_t s_evq          = NULL;
 static TimerHandle_t s_standby_to_t = NULL;  // 30 s STANDBY give-up timer
 static TimerHandle_t s_reconnect_t  = NULL;  // 5 s STANDBY reconnect retry
 static TimerHandle_t s_pairing_to_t = NULL;  // pairing-mode session give-up
-static TimerHandle_t s_poll_t       = NULL;  // ~200 ms VOL-wheel + mode-change poll (awake states)
 // Boot-mode decision handed down from main.c (settings + reset reason + CP-hold);
 // true means drop straight into Mode A at boot (main.c also skipped BT init for it).
 static bool          s_boot_into_mode_a = false;
@@ -154,8 +152,11 @@ static es8388_mode_t s_active_mode = ES8388_MODE_DSP;
 // Hysteresis band (%) and an EMA low-pass on the raw ADC, both to tame the VOL
 // line's jitter. Without it the reading bounces ~2-3% every poll, churning the
 // volume into a flood of DSP coeff recomputes (Mode B) / I2C writes (Mode A).
-// EMA alpha=0.30 is a ~0.5 s settle at the 200 ms poll: jitter shrinks below the
-// hysteresis band while a real wheel turn still tracks in well under a second.
+// EMA jitter rejection depends only on alpha (not the rate); at the dedicated
+// task's VOL_POLL_MS cadence, alpha=0.30 gives a ~0.25 s settle (time constant
+// poll/alpha) -- jitter shrinks below the hysteresis band while a real wheel turn
+// tracks in a quarter second. (Mode A samples the same EMA at its own 200 ms
+// light-sleep cadence, so it settles a touch slower; fine for the analog path.)
 #define VOL_HYSTERESIS_PCT 3
 #define VOL_EMA_ALPHA      0.30f
 // VOL wheel calibration. The wheel divider is VCC-referenced, so the wiper never
@@ -166,6 +167,12 @@ static es8388_mode_t s_active_mode = ES8388_MODE_DSP;
 #define VOL_RAW_MIN     400
 #define VOL_RAW_MAX     3550
 #define VOL_OVERSAMPLE  16
+// Mode B wheel-poll cadence for the dedicated vol_task (see vol_task). Faster and
+// far more regular than the old 200 ms software-timer poll, which rode the
+// priority-1 timer daemon and got starved to hundreds of ms during A2DP streaming
+// (both cores saturated), making the wheel feel laggy. 80 ms tracks a wheel turn
+// promptly at negligible core-1 cost.
+#define VOL_POLL_MS     80
 
 // Battery sense: VBAT (the U3 boost input) through an R20/R21 = 100k/100k divider
 // into ADC1_CH0, so VBAT_mV = 2 * sense_mV. Shares the ADC1 oneshot unit with the
@@ -443,6 +450,29 @@ void app_sm_set_wheel_enabled(bool enabled)
     ESP_LOGI(TAG, "VOL wheel %s", enabled ? "enabled" : "disabled");
 }
 
+// Dedicated Mode B VOL-wheel poll. The wheel used to be sampled from the 200 ms
+// software-timer callback, which runs on the priority-1 FreeRTOS timer daemon.
+// During A2DP streaming both cores are saturated by higher-priority work (BT
+// controller + Bluedroid on core 0; audio_pipe prio 10 and sfx_feed prio 8 on
+// core 1), so that daemon is starved and the poll stretches to hundreds of ms --
+// the wheel lag the user feels. This task is pinned to core 1 at priority 5:
+// below the audio producer and sfx (which spend most of each block blocked on the
+// I2S DMA, leaving ample slack), but far above the timer daemon, so the cadence
+// stays regular regardless of BT load. In Mode B, vol_apply_from_wheel only takes
+// the thread-safe settings lock -- it never touches the codec I2C (that branch is
+// Mode-A-only, and s_active_mode never leaves DSP in a Mode B session), so
+// applying directly from here introduces no new cross-task race. Only created in
+// Mode B; Mode A owns the CPU in mode_a_run() with its own light-sleep wheel poll,
+// and a competing core-1 task would defeat the sleep.
+static void vol_task(void *arg)
+{
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(VOL_POLL_MS));
+        if (s_state == ST_OTA) continue;   // don't churn volume mid-flash
+        vol_apply_from_wheel();
+    }
+}
+
 void app_sm_prime_volume(void)
 {
     // Bring up the ADC and seed the speaker volume from the wheel BEFORE the first
@@ -529,7 +559,6 @@ static void on_ota(ble_ota_event_t ev)
 static void standby_to_cb   (TimerHandle_t t) { post(EV_STANDBY_TIMEOUT);    }
 static void reconnect_cb    (TimerHandle_t t) { post(EV_RECONNECT_TICK);     }
 static void pairing_to_cb   (TimerHandle_t t) { post(EV_PAIRING_SESSION_TIMEOUT); }
-static void poll_cb         (TimerHandle_t t) { post(EV_POLL);                }
 
 // ---- transitions ----------------------------------------------------------
 
@@ -1192,13 +1221,6 @@ static void sm_task(void *arg)
             enter(ST_DEEP_IDLE);
             continue;
         }
-        // ~200 ms housekeeping tick: apply the VOL wheel. (Mode changes reboot, so
-        // there's no in-place desired-vs-active promotion here any more.)
-        if (ev == EV_POLL) {
-            if (s_state == ST_OTA) continue;  // don't touch volume/codec mid-flash
-            vol_apply_from_wheel();
-            continue;
-        }
         // Noise-gate deep-silence transition: re-apply the amp mute (drop the
         // speaker amp in silence, restore it the instant audio returns).
         if (ev == EV_GATE_CHANGED) { pam_apply(); continue; }
@@ -1340,13 +1362,6 @@ esp_err_t app_sm_start(void)
     s_pairing_to_t = xTimerCreate("pair_to",
                                   pdMS_TO_TICKS(CONFIG_GBHIFI_PAIRING_TIMEOUT_S * 1000),
                                   pdFALSE, NULL, pairing_to_cb);
-    // ~200 ms auto-reload housekeeping poll: VOL wheel + sticky mode change.
-    // Drives the event loop's awake states; in Mode A the CPU is light-sleeping
-    // and mode_a_run() does its own wheel poll, so these ticks just pile up
-    // harmlessly (drained/flushed on Mode A exit).
-    s_poll_t       = xTimerCreate("poll",
-                                  pdMS_TO_TICKS(200),
-                                  pdTRUE,  NULL, poll_cb);
 
     buttons_set_event_cb(on_button);
     bt_a2d_set_event_cb(on_bt);
@@ -1355,6 +1370,13 @@ esp_err_t app_sm_start(void)
     ble_config_set_ota_cb(on_ota);
 
     xTaskCreate(sm_task, "app_sm", 4096, NULL, 6, NULL);
-    xTimerStart(s_poll_t, 0);
+    // Mode B wheel poll: dedicated task pinned to core 1 (away from the core-0 BT
+    // stack) so streaming load can't starve it the way it starved the old prio-1
+    // timer-daemon poll. Not created for a Mode A boot -- mode_a_run() owns the CPU
+    // and does its own light-sleep wheel poll, and a competing core-1 task would
+    // defeat the sleep. (Mode is fixed per boot; a mode toggle reboots.)
+    if (!s_boot_into_mode_a) {
+        xTaskCreatePinnedToCore(vol_task, "vol_wheel", 3072, NULL, 5, NULL, 1);
+    }
     return ESP_OK;
 }
