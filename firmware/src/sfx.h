@@ -40,9 +40,9 @@ esp_err_t sfx_init(void);
 void sfx_trigger_synth(synth_id_t id);
 
 // Trigger playback of a clip file by base name (without path or extension),
-// e.g. "startup" plays /clips/startup.gsfx. Thread-safe; the feeder picks it up
-// and preempts any clip already streaming. Silently no-ops if the file is
-// missing/invalid.
+// e.g. "startup-modern" plays /clips/startup-modern.gsfx. Thread-safe; the
+// feeder picks it up and preempts any clip already streaming. Silently no-ops
+// if the file is missing/invalid.
 void sfx_trigger_clip(const char *name);
 
 // Render this block's cue (synth + clip) ONCE into an internal buffer,

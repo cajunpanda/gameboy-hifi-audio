@@ -73,6 +73,7 @@ static const gbhifi_settings_t s_defaults = {
     .eq_bt_treble_db = CONFIG_GBHIFI_DSP_BT_EQ_TREBLE_DB,
     .sfx_enabled     = CONFIG_GBHIFI_DSP_SFX_DEFAULT_ON,
     .sfx_level_db    = CONFIG_GBHIFI_DSP_SFX_LEVEL_DB,
+    .startup_mode    = STARTUP_MODERN,
     .nr_hpf_hz       = CONFIG_GBHIFI_DSP_NR_HPF_HZ,
     .nr_lpf_hz       = CONFIG_GBHIFI_DSP_NR_LPF_HZ,
     .nr_notch_hz     = CONFIG_GBHIFI_DSP_NR_NOTCH_HZ,
@@ -107,6 +108,7 @@ static void sanitise(gbhifi_settings_t *s)
     s->eq_bt_mid_db    = CLAMP(s->eq_bt_mid_db,    EQ_DB_MIN,  EQ_DB_MAX);
     s->eq_bt_treble_db = CLAMP(s->eq_bt_treble_db, EQ_DB_MIN,  EQ_DB_MAX);
     s->sfx_level_db    = CLAMP(s->sfx_level_db,    SFX_DB_MIN, SFX_DB_MAX);
+    if (s->startup_mode >= STARTUP_MODE_COUNT) s->startup_mode = STARTUP_MODERN;
     if (s->nr_hpf_hz   > NR_HZ_MAX) s->nr_hpf_hz   = NR_HZ_MAX;
     if (s->nr_lpf_hz   > NR_HZ_MAX) s->nr_lpf_hz   = NR_HZ_MAX;
     if (s->nr_notch_hz > NR_HZ_MAX) s->nr_notch_hz = NR_HZ_MAX;
@@ -251,6 +253,27 @@ esp_err_t settings_set_sfx(bool enabled, int8_t level_db)
     s_generation++;
     xSemaphoreGive(s_lock);
     return ESP_OK;
+}
+
+esp_err_t settings_set_startup_mode(uint8_t mode)
+{
+    if (!s_lock) return ESP_ERR_INVALID_STATE;
+    if (mode >= STARTUP_MODE_COUNT) mode = STARTUP_MODERN;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    s_cur.startup_mode = mode;
+    s_generation++;
+    xSemaphoreGive(s_lock);
+    return ESP_OK;
+}
+
+const char *settings_startup_clip(uint8_t mode)
+{
+    switch (mode) {
+    case STARTUP_MODERN:   return "startup-modern";
+    case STARTUP_ORIGINAL: return "startup-original";
+    case STARTUP_CUSTOM:   return "startup-custom";
+    default:               return NULL;   // STARTUP_OFF + anything unknown
+    }
 }
 
 esp_err_t settings_set_nr(uint16_t hpf_hz, uint16_t lpf_hz, uint16_t notch_hz,

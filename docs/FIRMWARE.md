@@ -107,10 +107,33 @@ After that, updates can go over Bluetooth.
 
 The clips themselves are in the GSFX format. Use `tools/make_clip.py` to author
 them: `from-wav` converts a 16-bit WAV to a clip (downmix + optional resample),
-or `gen-startup` generates a synth test cue. `startup.gsfx` is the boot chime the
-mod plays over a muted passthrough (see "Init order"); to replace it, author a new
-`firmware/data/startup.gsfx` and reflash the filesystem image (see "Partitions and
-the clip image"). The web config page can also upload clips to a running board.
+or `gen-startup` generates a synth test cue.
+
+The boot chime plays over a muted passthrough (see "Init order"). Which clip it
+uses comes from the `startup_mode` setting, whose values are `startup_mode_t` in
+`settings.h`:
+
+| mode | clip | notes |
+| --- | --- | --- |
+| `STARTUP_MODERN` | `startup-modern.gsfx` | the Switch/NSO version, the default |
+| `STARTUP_ORIGINAL` | `startup-original.gsfx` | the full original GBA chime |
+| `STARTUP_CUSTOM` | `startup-custom.gsfx` | ships with a default; replaced by a web-UI upload |
+| `STARTUP_OFF` | none | no clip; the live GBA chime plays through |
+
+`STARTUP_OFF` is not `STARTUP_ORIGINAL`. The codec and amp are still coming up
+during the GBA's first ~0.9 s, so the passthrough chime is truncated. That is why
+the mod voices its own clip.
+
+All three clips ship in the filesystem image. To change one, author a new
+`firmware/data/startup-*.gsfx` and reflash the image (see "Partitions and the
+clip image").
+
+The web config page can also replace `startup-custom.gsfx` over BLE. It converts
+a dropped audio file to GSFX in the browser, then streams it over the same
+OTACTL/OTADATA characteristics a firmware update uses (opcodes `CLIP_BEGIN` /
+`CLIP_END`). The device writes to a temp file and renames it into place only once
+size, CRC32 and the GSFX header check out, so a dropped link leaves the previous
+clip intact. A filesystem reflash restores the bundled default.
 
 ## Source layout
 

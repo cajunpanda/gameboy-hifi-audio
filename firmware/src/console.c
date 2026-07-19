@@ -106,6 +106,34 @@ static int cmd_sfx(int argc, char **argv)
     return 0;
 }
 
+// `startup [modern|original|custom|off]`: select the boot chime, or report it.
+// Takes effect on the next power-on; `save` to persist.
+static const char *const STARTUP_NAMES[STARTUP_MODE_COUNT] = {
+    [STARTUP_MODERN] = "modern", [STARTUP_ORIGINAL] = "original",
+    [STARTUP_CUSTOM] = "custom", [STARTUP_OFF]      = "off",
+};
+
+static int cmd_startup(int argc, char **argv)
+{
+    gbhifi_settings_t s;
+    settings_get(&s);
+    if (argc < 2) {
+        const char *clip = settings_startup_clip(s.startup_mode);
+        printf("startup=%s (clip: %s)\n", STARTUP_NAMES[s.startup_mode],
+               clip ? clip : "none");
+        return 0;
+    }
+    for (uint8_t i = 0; i < STARTUP_MODE_COUNT; i++) {
+        if (strcmp(argv[1], STARTUP_NAMES[i]) == 0) {
+            settings_set_startup_mode(i);
+            printf("startup=%s (takes effect next power-on)\n", STARTUP_NAMES[i]);
+            return 0;
+        }
+    }
+    printf("usage: startup [modern|original|custom|off]\n");
+    return 1;
+}
+
 // `chime [pairing|connect|disconnect]`: fire a synth cue (default connect).
 static int cmd_chime(int argc, char **argv)
 {
@@ -543,7 +571,8 @@ static int cmd_get(int argc, char **argv)
     printf("BT  EQ=%s [bass %+d  mid %+d  treble %+d dB]\n",
            s.eq_bt_enabled ? "on" : "off",
            s.eq_bt_bass_db, s.eq_bt_mid_db, s.eq_bt_treble_db);
-    printf("sfx=%s [%+d dB]\n", s.sfx_enabled ? "on" : "off", s.sfx_level_db);
+    printf("sfx=%s [%+d dB]  startup=%s\n", s.sfx_enabled ? "on" : "off",
+           s.sfx_level_db, STARTUP_NAMES[s.startup_mode]);
     printf("mode=%c  boot_mode_a=%s  auto_connect=%s\n",
            s.mode_a ? 'A' : 'B', s.boot_mode_a ? "on" : "off",
            s.auto_connect ? "on" : "off");
@@ -574,6 +603,7 @@ static void register_cmds(void)
         { .command = "eqhp",  .help = "Headphone EQ: eqhp on|off [bass mid treble]", .func = cmd_eqhp },
         { .command = "eqbt",  .help = "Bluetooth EQ: eqbt on|off [bass mid treble]", .func = cmd_eqbt },
         { .command = "sfx",   .help = "Cue mixing: sfx on|off [level_dB]",        .func = cmd_sfx },
+        { .command = "startup", .help = "Boot chime: startup [modern|original|custom|off]", .func = cmd_startup },
         { .command = "chime", .help = "Play a synth cue: chime [pairing|connect|disconnect]", .func = cmd_chime },
         { .command = "play",  .help = "Play a clip: play <name>",                .func = cmd_play },
         { .command = "out1",  .help = "Tune headphone-amp level: out1 <0x00-0x21>", .func = cmd_out1 },

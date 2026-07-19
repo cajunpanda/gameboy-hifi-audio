@@ -20,8 +20,8 @@ Usage:
     # Convert a mono WAV (any rate) to a clip:
     make_clip.py from-wav voice.wav clips/connected.gsfx --rate 16000
 
-    # Generate the bundled built-in test cue (two-note rising chime):
-    make_clip.py gen-startup firmware/data/startup.gsfx
+    # Generate a synth test cue (two-note rising chime):
+    make_clip.py gen-startup /tmp/test-cue.gsfx
 """
 import argparse
 import math

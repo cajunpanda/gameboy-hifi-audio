@@ -6,6 +6,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "esp_bt.h"
 #include "esp_gap_ble_api.h"
@@ -29,6 +30,7 @@
 #include <stdarg.h>
 #include <stdlib.h>
 
+#include "fs.h"
 #include "settings.h"
 #include "sfx.h"
 #include "audio_pipeline.h"   // spectrum tap for the BLE web visualizer
@@ -88,7 +90,18 @@ static const uint8_t SPEC_UUID128[16] = {
 // the JS side can DataView-parse a stable schema. Keep in lockstep with the web
 // UI's encoder/decoder. 28 bytes needs an ATT MTU >= 31, so ble_config_init()
 // raises the local MTU (Web Bluetooth negotiates well above that).
-#define SETTINGS_WIRE_LEN 28
+// Append-only and length-tolerant, so adding a field is not a breaking change:
+//   - New fields take the first reserved offset. Existing fields never move;
+//     retired ones stay reserved.
+//   - Writes down to SETTINGS_WIRE_MIN are accepted. Fields past the write
+//     length keep their current value, so an older UI still configures newer
+//     firmware.
+//   - Reads return the full length with the tail zeroed; the version field says
+//     what the UI can trust.
+// Keep the payload under ~180 bytes: long writes and Read-Blob are not
+// implemented, so it must fit one PDU even on a small negotiated MTU.
+#define SETTINGS_WIRE_LEN 64
+#define SETTINGS_WIRE_MIN 28
 //   [0..1] version u16   [2] spk_vol   [3] bt_vol
 //   [4] eq_en [5] eq_bass [6] eq_mid [7] eq_treble (i8)  Speaker EQ
 //   [8] eq_bt_en [9] eq_bt_bass [10] eq_bt_mid [11] eq_bt_treble (i8)  Bluetooth EQ
@@ -97,6 +110,10 @@ static const uint8_t SPEC_UUID128[16] = {
 //   [16..17] hold_connect_ms u16  [18..19] hold_pair_ms u16
 //   [20..21] hold_mode_ms u16     [22..23] hold_mode_exit_ms u16
 //   [24] eq_hp_en [25] eq_hp_bass [26] eq_hp_mid [27] eq_hp_treble (i8)  Headphone EQ
+//   ---- added in version 11 ----
+//   [28] startup_mode (startup_mode_t: 0=modern 1=original 2=custom 3=off)
+//   [29] custom clip present (READ-ONLY status, writes ignored)
+//   [30..63] reserved, zero
 
 // Action characteristic opcodes (byte 0 of the write).
 enum {
@@ -112,6 +129,10 @@ enum {
     OTA_OP_END      = 0x02,  // no args               -> finalize + reboot
     OTA_OP_ABORT    = 0x03,  // no args               -> abort + clean up
     OTA_OP_GET_INFO = 0x04,  // no args               -> reply INFO (running slot + version)
+    // Clip upload reuses this transport: same windowed chunking, and the two
+    // transfers are mutually exclusive. Destination is the custom-startup slot.
+    OTA_OP_CLIP_BEGIN = 0x05,  // [u32 size][u32 crc32] -> open the slot, reply READY
+    OTA_OP_CLIP_END   = 0x06,  // no args               -> verify + commit, reply CLIP_DONE
 };
 // OTACTL status codes (device -> client, byte 0 of the notify):
 enum {
@@ -120,7 +141,19 @@ enum {
     OTA_ST_DONE  = 0x12,  // no args                     -> verified, rebooting
     OTA_ST_INFO  = 0x13,  // ascii "version|slot|builddate" -> reply to GET_INFO
     OTA_ST_ERROR = 0x1f,  // [u8 code][ascii msg]        -> failure
+    OTA_ST_CLIP_DONE = 0x14,  // no args                 -> clip stored (no reboot)
 };
+
+// ERROR codes: 1-9 firmware OTA (8 = the shared stall abort), 20-30 clip
+// upload. Keep the ranges disjoint.
+
+// The uploadable startup clip: one slot, overwritten each time. Written to a
+// temp path and renamed only once the transfer verifies.
+#define CLIP_UPLOAD_NAME  "startup-custom"
+#define CLIP_UPLOAD_PATH  FS_CLIPS_MOUNT "/" CLIP_UPLOAD_NAME ".gsfx"
+#define CLIP_UPLOAD_TMP   FS_CLIPS_MOUNT "/" CLIP_UPLOAD_NAME ".tmp"
+#define CLIP_UPLOAD_MAX   (400 * 1024)   // 4 s of 44.1 kHz mono is ~345 KB
+#define CLIP_MAX_SEC      4.05f          // matches the web UI's cap, with rounding slack
 #define OTA_WINDOW     8192   // bytes the client may send unacked before waiting
 #define OTA_CHUNK_MAX  500    // per-write payload cap (also bounded by the MTU)
 #define OTA_STALL_MS   15000  // abort a transfer (or an un-proceeded begin) idle this long
@@ -322,6 +355,16 @@ static uint32_t s_ota_crc      = 0;      // running crc32 of received data
 static uint32_t s_ota_exp_crc  = 0;      // crc32 the client promised
 static int64_t  s_ota_touch_ms = 0;      // last BEGIN/data activity (stall watchdog)
 
+// ---- clip upload state ----------------------------------------------------
+// Shares the OTA transport and stall watchdog; writes to LittleFS, never reboots.
+static FILE    *s_clip_f       = NULL;   // open temp file while streaming
+static bool     s_clip_active  = false;
+static uint32_t s_clip_size    = 0;
+static uint32_t s_clip_recv    = 0;
+static uint32_t s_clip_acked   = 0;
+static uint32_t s_clip_crc     = 0;
+static uint32_t s_clip_exp_crc = 0;
+
 // ---- settings <-> wire ----------------------------------------------------
 static void settings_to_wire(uint8_t *b)
 {
@@ -355,6 +398,11 @@ static void settings_to_wire(uint8_t *b)
     b[25] = (uint8_t)s.eq_hp_bass_db;
     b[26] = (uint8_t)s.eq_hp_mid_db;
     b[27] = (uint8_t)s.eq_hp_treble_db;
+    b[28] = s.startup_mode;
+    // Status, not a setting: tells the UI whether to offer the Custom choice.
+    b[29] = fs_clip_exists(CLIP_UPLOAD_NAME) ? 1 : 0;
+    // Reserved tail: zeroed so a UI can tell "field not set" from stale bytes.
+    memset(&b[30], 0, SETTINGS_WIRE_LEN - 30);
 }
 
 // Apply a settings write through the validating setters (live, not persisted;
@@ -366,7 +414,9 @@ static void settings_to_wire(uint8_t *b)
 // would be a one-way trip the UI can't reverse, stranding the user. The button
 // gesture is the only user-facing mode control; the UI shows mode_a read-only
 // as status.
-static void wire_to_settings(const uint8_t *b)
+// `len` is the actual write length, which may be shorter than
+// SETTINGS_WIRE_LEN (an older UI). Fields past it keep their current value.
+static void wire_to_settings(const uint8_t *b, uint16_t len)
 {
     settings_set_volume(b[2]);
     settings_set_bt_volume(b[3]);
@@ -379,6 +429,8 @@ static void wire_to_settings(const uint8_t *b)
                               (uint16_t)(b[18] | (b[19] << 8)),
                               (uint16_t)(b[20] | (b[21] << 8)),
                               (uint16_t)(b[22] | (b[23] << 8)));
+    // ---- version 11 and later: only if the write actually carried them ----
+    if (len > 28) settings_set_startup_mode(b[28]);
 }
 
 static void do_action(const uint8_t *v, uint16_t len)
@@ -595,6 +647,94 @@ static void ota_handle_end(void)
     esp_restart();
 }
 
+// ---- clip upload ----------------------------------------------------------
+// Drop an in-flight transfer and remove the temp file. The committed clip is
+// untouched: nothing is renamed into place until CLIP_END verifies it.
+static void clip_cleanup(void)
+{
+    if (s_clip_f) { fclose(s_clip_f); s_clip_f = NULL; }
+    if (s_clip_active) unlink(CLIP_UPLOAD_TMP);
+    s_clip_active = false;
+    s_clip_size = s_clip_recv = s_clip_acked = s_clip_crc = s_clip_exp_crc = 0;
+}
+
+// OTACTL CLIP_BEGIN: open the temp file and stream. No slot erase and no
+// app_sm quiesce, unlike a firmware OTA; audio keeps running, though block
+// erases can glitch it briefly.
+static void clip_handle_begin(const uint8_t *v, uint16_t len)
+{
+    if (len < 9) { ota_error(20, "short begin"); return; }
+    clip_cleanup();
+    uint32_t size = get_u32(v + 1);
+    if (size <= 12 || size > CLIP_UPLOAD_MAX) { ota_error(21, "bad clip size"); return; }
+    s_clip_f = fopen(CLIP_UPLOAD_TMP, "wb");
+    if (!s_clip_f) { ota_error(22, "cannot open clip slot"); return; }
+    s_clip_size    = size;
+    s_clip_exp_crc = get_u32(v + 5);
+    s_clip_active  = true;
+    s_clip_recv = s_clip_acked = s_clip_crc = 0;
+    s_ota_touch_ms = now_ms();
+    ota_widen_link();
+    uint32_t chunk = (s_mtu > 3) ? (uint32_t)(s_mtu - 3) : 20;
+    if (chunk > OTA_CHUNK_MAX) chunk = OTA_CHUNK_MAX;
+    uint8_t b[9]; b[0] = OTA_ST_READY; put_u32(b + 1, chunk); put_u32(b + 5, OTA_WINDOW);
+    ota_notify(b, 9);
+    ESP_LOGI(TAG, "clip upload: %u bytes (crc 0x%08x), chunk=%u",
+             (unsigned)size, (unsigned)s_clip_exp_crc, (unsigned)chunk);
+}
+
+static void clip_handle_data(const uint8_t *v, uint16_t len)
+{
+    if (!s_clip_active) return;
+    if (s_clip_recv + len > s_clip_size) { ota_error(23, "clip overrun"); clip_cleanup(); return; }
+    if (fwrite(v, 1, len, s_clip_f) != len) { ota_error(24, "clip write failed"); clip_cleanup(); return; }
+    s_clip_crc     = esp_rom_crc32_le(s_clip_crc, v, len);
+    s_clip_recv   += len;
+    s_ota_touch_ms = now_ms();
+    if (s_clip_recv - s_clip_acked >= OTA_WINDOW / 2 || s_clip_recv >= s_clip_size) {
+        s_clip_acked = s_clip_recv;
+        uint8_t b[5]; b[0] = OTA_ST_ACK; put_u32(b + 1, s_clip_acked);
+        ota_notify(b, 5);
+    }
+}
+
+// OTACTL CLIP_END: verify, then commit. Everything is checked before the
+// rename, so a truncated or corrupt upload cannot replace a working clip.
+static void clip_handle_end(void)
+{
+    if (!s_clip_active) { ota_error(25, "not active"); return; }
+    fclose(s_clip_f); s_clip_f = NULL;
+    if (s_clip_recv != s_clip_size) {
+        ota_error(26, "clip size mismatch"); clip_cleanup(); return;
+    }
+    if (s_clip_crc != s_clip_exp_crc) {
+        ota_error(27, "clip crc mismatch"); clip_cleanup(); return;
+    }
+    // Re-read from flash: validates what landed, not what we think we wrote.
+    struct { char magic[4]; uint32_t rate; uint32_t frames; } hdr;
+    FILE *f = fopen(CLIP_UPLOAD_TMP, "rb");
+    bool ok = f && fread(&hdr, 1, sizeof(hdr), f) == sizeof(hdr);
+    if (f) fclose(f);
+    if (!ok || memcmp(hdr.magic, "GSFX", 4) != 0) {
+        ota_error(28, "not a GSFX clip"); clip_cleanup(); return;
+    }
+    if (hdr.rate < 8000 || hdr.rate > 48000 ||
+        hdr.frames == 0 || 12 + 2 * (uint64_t)hdr.frames != s_clip_size ||
+        (float)hdr.frames / (float)hdr.rate > CLIP_MAX_SEC) {
+        ota_error(29, "bad clip header"); clip_cleanup(); return;
+    }
+    unlink(CLIP_UPLOAD_PATH);                      // rename() won't clobber on LittleFS
+    if (rename(CLIP_UPLOAD_TMP, CLIP_UPLOAD_PATH) != 0) {
+        ota_error(30, "clip commit failed"); clip_cleanup(); return;
+    }
+    s_clip_active = false;                         // committed: don't unlink it
+    ESP_LOGI(TAG, "clip stored: %s (%u Hz, %u frames)", CLIP_UPLOAD_PATH,
+             (unsigned)hdr.rate, (unsigned)hdr.frames);
+    clip_cleanup();
+    uint8_t done = OTA_ST_CLIP_DONE; ota_notify(&done, 1);
+    config_link_quiet();
+}
+
 // OTACTL GET_INFO: reply "<version>|<running-slot>|<build-date>" so the UI can
 // show the installed firmware version (CONFIG_APP_PROJECT_VER) + which slot it
 // runs from + when it was built (the date distinguishes dev builds at the same
@@ -618,8 +758,13 @@ static void ota_handle_ctl(const uint8_t *v, uint16_t len)
     switch (v[0]) {
     case OTA_OP_BEGIN:    ota_handle_begin(v, len); break;
     case OTA_OP_END:      ota_handle_end();         break;
-    case OTA_OP_ABORT:    ESP_LOGW(TAG, "OTA aborted by client"); ota_cleanup(true); break;
-    case OTA_OP_GET_INFO: ota_handle_get_info();    break;
+    case OTA_OP_ABORT:
+        ESP_LOGW(TAG, "transfer aborted by client");
+        ota_cleanup(true); clip_cleanup();
+        break;
+    case OTA_OP_GET_INFO:   ota_handle_get_info();        break;
+    case OTA_OP_CLIP_BEGIN: clip_handle_begin(v, len);    break;
+    case OTA_OP_CLIP_END:   clip_handle_end();            break;
     default: ESP_LOGW(TAG, "OTA ctl: unknown op 0x%02x", v[0]); break;
     }
 }
@@ -764,8 +909,10 @@ static void notify_timer_cb(void *arg)
     // OTA stall watchdog: a transfer (or a BEGIN that app_sm never proceeded on)
     // must not wedge the OTA state forever (the production board has no
     // accessible reset). Abort if idle too long.
-    if ((s_ota_active || s_ota_pending) && now_ms() - s_ota_touch_ms > OTA_STALL_MS) {
-        ESP_LOGW(TAG, "OTA stalled %d ms -> abort", OTA_STALL_MS);
+    if ((s_ota_active || s_ota_pending || s_clip_active) &&
+        now_ms() - s_ota_touch_ms > OTA_STALL_MS) {
+        ESP_LOGW(TAG, "transfer stalled %d ms -> abort", OTA_STALL_MS);
+        clip_cleanup();
         ota_error(8, "stalled");
         ota_cleanup(true);
     }
@@ -942,8 +1089,9 @@ static void gatts_cb(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if,
         s_log_notify_on = false;
         s_spec_notify_on = false;
         audio_pipeline_spectrum_enable(false);   // stop the FFT tap when nobody's watching
-        // Abort any in-flight OTA and let app_sm resume the audio path.
+        // Abort any in-flight transfer and let app_sm resume the audio path.
         ota_cleanup(true);
+        clip_cleanup();
         if (!s_adv_inhibit) esp_ble_gap_start_advertising(&s_adv_params);
         break;
 
@@ -968,13 +1116,18 @@ static void gatts_cb(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if,
             break;
         }
         if (param->write.handle == s_handles[IDX_SETTINGS_VAL]) {
-            if (param->write.len == SETTINGS_WIRE_LEN) {
-                wire_to_settings(param->write.value);
-                ESP_LOGI(TAG, "settings write applied (vol=%u btvol=%u)",
-                         param->write.value[2], param->write.value[3]);
+            // Accept anything from the version-10 layout up to the current one,
+            // so an older UI still configures newer firmware. A longer write
+            // (newer UI) is fine too; the extra bytes are ignored.
+            if (param->write.len >= SETTINGS_WIRE_MIN) {
+                uint16_t len = param->write.len;
+                if (len > SETTINGS_WIRE_LEN) len = SETTINGS_WIRE_LEN;
+                wire_to_settings(param->write.value, len);
+                ESP_LOGI(TAG, "settings write applied (len=%u vol=%u btvol=%u)",
+                         len, param->write.value[2], param->write.value[3]);
             } else {
-                ESP_LOGW(TAG, "settings write wrong len %d (want %d)",
-                         param->write.len, SETTINGS_WIRE_LEN);
+                ESP_LOGW(TAG, "settings write too short: %d (need >= %d)",
+                         param->write.len, SETTINGS_WIRE_MIN);
             }
             if (param->write.need_rsp) {
                 esp_ble_gatts_send_response(gatts_if, param->write.conn_id,
@@ -991,7 +1144,10 @@ static void gatts_cb(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if,
             ota_handle_ctl(param->write.value, param->write.len);
         } else if (param->write.handle == s_handles[IDX_OTADATA_VAL]) {
             // Write-without-response firmware chunk; no ack to send.
-            ota_handle_data(param->write.value, param->write.len);
+            // One data characteristic, two possible transfers; only one can be
+            // active at a time.
+            if (s_clip_active) clip_handle_data(param->write.value, param->write.len);
+            else               ota_handle_data(param->write.value, param->write.len);
         } else if (param->write.handle == s_handles[IDX_CMD_VAL]) {
             // Console command line (AUTO_RSP: the stack already acked). Copy,
             // trim trailing CR/LF/space, and hand to ble_cmd_task; running the
@@ -1042,7 +1198,7 @@ esp_err_t ble_config_init(void)
     err = esp_ble_gatts_app_register(BLE_APP_ID);
     if (err) { ESP_LOGE(TAG, "gatts app reg: %s", esp_err_to_name(err)); return err; }
 
-    // Raise the local MTU to the max so (a) the SETTINGS_WIRE_LEN (28-byte)
+    // Raise the local MTU to the max so (a) the SETTINGS_WIRE_LEN (64-byte)
     // settings read/write fits one PDU (the default 23-byte MTU would force a
     // multi-PDU Read-Blob the RSP_BY_APP handler doesn't implement), and (b) OTA
     // streams ~500-byte chunks instead of ~20 (a 1 MB image over 20-byte writes

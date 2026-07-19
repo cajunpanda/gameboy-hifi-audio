@@ -163,8 +163,12 @@ From the page you can set:
 - Equalizer (bass, mid, treble) for the speaker, for wired headphones, and for
   Bluetooth, each on its own.
 - Sound effect cues and their level.
+- The startup sound: the modern Switch version, the original Game Boy Advance
+  chime, your own, or off. Off lets the console's own chime through, which
+  starts a moment late because the mod is still waking up.
+- Your own startup sound: drop in an MP3, M4A, WAV, OGG or FLAC and the page
+  converts the first 4 seconds and sends it over Bluetooth.
 - The R-button hold times.
-- Custom sound clips: upload your own short cues.
 - Firmware updates: push a new firmware file to the mod over Bluetooth. Keep
   the page open until it reboots. Audio pauses for a minute or two during the
   update.

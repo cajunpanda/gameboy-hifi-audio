@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdbool.h>
+
 #include "esp_err.h"
 
 // Mount point for the audio clip store (the `storage` LittleFS partition).
@@ -11,4 +13,9 @@
 // (first boot after a fresh flash with no FS image, or a corrupt FS). Call
 // once at boot before sfx_init().
 esp_err_t fs_init(void);
+
+// Does /clips/<name>.gsfx exist? Used to tell a control surface whether the
+// uploadable custom-startup slot has been filled yet, so the UI can offer (or
+// grey out) the "Custom" startup choice. Cheap stat, no read.
+bool fs_clip_exists(const char *name);
 

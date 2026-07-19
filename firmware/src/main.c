@@ -261,10 +261,11 @@ void app_main(void)
     // passthrough, so the user hears one full chime instead of the truncated live
     // GBA chime (the codec/amp miss its first ~0.9 s of boot). dsp_begin_intro()
     // mutes the passthrough until the clip ends; sfx_trigger_clip() streams it.
-    // Gated on sfx_enabled: with cues off, this block does not run and the GBA's
-    // own chime plays through untouched (the passthrough already carries the real
-    // chime). Both calls run before audio_pipeline_start(), i.e. before the
-    // audio task exists, so the passthrough is muted from its first block.
+    // Gated on sfx_enabled and startup_mode: with cues off, or the mode set to
+    // STARTUP_OFF, this block does not run and the GBA's own chime plays through
+    // untouched, missing its first ~0.9 s. STARTUP_ORIGINAL is that same chime
+    // complete, as a clip. Both calls run before audio_pipeline_start(), i.e.
+    // before the audio task exists, so the passthrough is muted from block one.
     // Voice the startup chime only on a genuine power cycle. Every other reset --
     // a Mode A/B change reboot (esp_restart, ESP_RST_SW), a watchdog, a brownout --
     // re-runs this boot path but should be silent: the user didn't power the console
@@ -304,10 +305,14 @@ void app_main(void)
     }
     // Voice the startup chime only on a genuine power cycle into Mode B. Any other
     // reset (mode-change reboot, watchdog, brownout) re-runs this boot path silently.
-    bool use_mod_chime = boot_s.sfx_enabled && power_on && !boot_mode_a;
+    // NULL == STARTUP_OFF, which takes the cues-disabled path: no intro mute, no
+    // clip, and the BT hold-off below is skipped since it exists only to keep the
+    // radio off the chime.
+    const char *startup_clip = settings_startup_clip(boot_s.startup_mode);
+    bool use_mod_chime = boot_s.sfx_enabled && power_on && !boot_mode_a && startup_clip;
     if (use_mod_chime) {
         dsp_begin_intro();
-        sfx_trigger_clip("startup");
+        sfx_trigger_clip(startup_clip);
     }
 
     ESP_ERROR_CHECK(audio_pipeline_start());

@@ -3,8 +3,9 @@
 A single-file Web Bluetooth control panel for the mod's BLE config server
 (`firmware/src/ble_config.c`). It tunes the DSP settings (speaker and Bluetooth
 volume, EQ, sound effects), sets the R-button hold timings, plays chimes and
-clips, saves to the device, and updates the firmware over the air. No app, no
-WiFi, just Chrome or Edge talking to the ESP32 over Bluetooth.
+clips, saves to the device, and updates the firmware over the air. It also
+converts a dropped audio file to a startup clip in the browser and uploads it.
+No app, no WiFi, just Chrome or Edge talking to the ESP32 over Bluetooth.
 
 ## Hosting (GitHub Pages)
 

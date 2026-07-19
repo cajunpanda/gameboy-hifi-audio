@@ -17,7 +17,25 @@
 // "dsp"). Bump GBHIFI_SETTINGS_VERSION when the struct layout changes; an
 // older/absent blob falls back to the Kconfig-seeded defaults.
 
-#define GBHIFI_SETTINGS_VERSION 10
+#define GBHIFI_SETTINGS_VERSION 11
+
+// Which boot chime the mod voices on a genuine power-on. Clip modes stream
+// /clips/<name>.gsfx; STARTUP_OFF plays nothing and leaves the live GBA
+// passthrough unmuted. OFF is not ORIGINAL: the codec and amp are still coming
+// up for the GBA's first ~0.9 s, so the passthrough chime is truncated.
+// Values are persisted; append only, never renumber.
+typedef enum {
+    STARTUP_MODERN   = 0,  // startup-modern.gsfx: the Switch/NSO version (default)
+    STARTUP_ORIGINAL = 1,  // startup-original.gsfx: the full original GBA chime
+    STARTUP_CUSTOM   = 2,  // startup-custom.gsfx: the user's uploaded slot
+    STARTUP_OFF      = 3,  // no clip; the live GBA chime plays through untouched
+    STARTUP_MODE_COUNT,
+} startup_mode_t;
+
+// Clip base name for a startup_mode_t (as passed to sfx_trigger_clip), or NULL
+// for STARTUP_OFF and any unknown value, so a forward-version NVS blob cannot
+// voice the wrong chime.
+const char *settings_startup_clip(uint8_t mode);
 
 typedef struct {
     uint16_t version;          // == GBHIFI_SETTINGS_VERSION
@@ -52,6 +70,10 @@ typedef struct {
 
     bool     sfx_enabled;      // allow cues (chimes/clips) to mix in (speaker only)
     int8_t   sfx_level_db;     // cue mix gain trim, -24..+6 dB (0 = authored)
+    // Which boot chime to voice (startup_mode_t). Independent of sfx_enabled,
+    // which gates ALL cues: with cues off no startup clip plays regardless of
+    // this. main.c reads it once at boot.
+    uint8_t  startup_mode;
 
     // ---- Noise reduction (local capture path) ----
     // Tunable per GBA: board revision and other mods change the noise floor. Each
@@ -123,6 +145,8 @@ esp_err_t settings_set_eq(bool enabled, int8_t bass_db, int8_t mid_db, int8_t tr
 esp_err_t settings_set_hp_eq(bool enabled, int8_t bass_db, int8_t mid_db, int8_t treble_db);
 esp_err_t settings_set_bt_eq(bool enabled, int8_t bass_db, int8_t mid_db, int8_t treble_db);
 esp_err_t settings_set_sfx(bool enabled, int8_t level_db);
+// Select the boot chime. Out-of-range values fall back to STARTUP_MODERN.
+esp_err_t settings_set_startup_mode(uint8_t mode);
 esp_err_t settings_set_nr(uint16_t hpf_hz, uint16_t lpf_hz, uint16_t notch_hz,
                           uint8_t notch_q);
 esp_err_t settings_set_nr_gate(int8_t thresh_db, uint8_t range_db);

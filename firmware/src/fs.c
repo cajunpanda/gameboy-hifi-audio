@@ -1,5 +1,8 @@
 #include "fs.h"
 
+#include <stdio.h>
+#include <sys/stat.h>
+
 #include "esp_littlefs.h"
 #include "esp_log.h"
 
@@ -32,3 +35,12 @@ esp_err_t fs_init(void)
     return ESP_OK;
 }
 
+bool fs_clip_exists(const char *name)
+{
+    if (!name || !*name) return false;
+    char path[64];
+    int n = snprintf(path, sizeof(path), FS_CLIPS_MOUNT "/%s.gsfx", name);
+    if (n < 0 || n >= (int)sizeof(path)) return false;
+    struct stat st;
+    return stat(path, &st) == 0 && st.st_size > 0;
+}
