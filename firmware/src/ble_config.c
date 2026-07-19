@@ -147,7 +147,9 @@ enum {
 // streamed at ~20 fps while a client is subscribed. Payload byte 0 is the source
 // (0 = speaker, 1 = Bluetooth, 2 = headphone), then SPEC_BINS left bytes and SPEC_BINS
 // right bytes (0..255 each). Gated on the CCCD: the audio-side FFT tap only runs
-// while someone is watching.
+// while someone is watching. The notify rate does NOT set the rev 1 click rate:
+// radio bursts happen per connection event (config_link_quiet), and frames
+// queued between events ride the same burst, so full frame rate costs nothing.
 #define SPEC_BINS         32    // bands per channel (payload = 1 + 2 * SPEC_BINS)
 #define SPEC_INTERVAL_MS  50    // ~20 fps
 
@@ -453,6 +455,7 @@ static void ota_error(uint8_t code, const char *msg)
 // Tear down any in-flight transfer. fire_cb=true notifies app_sm (FINISHED) so
 // it resumes the audio path. Used on abort/error/disconnect/stall, not on a
 // clean success (that reboots, so resuming is moot).
+static void config_link_quiet(void);
 static void ota_cleanup(bool fire_cb)
 {
     if (s_ota_active && s_ota_handle) esp_ota_abort(s_ota_handle);
@@ -463,6 +466,32 @@ static void ota_cleanup(bool fire_cb)
     s_ota_part    = NULL;
     s_ota_size = s_ota_recv = s_ota_acked = s_ota_crc = s_ota_exp_crc = 0;
     if (fire_cb && was_busy && s_ota_cb) s_ota_cb(BLE_OTA_EV_FINISHED);
+    // An aborted transfer leaves the fast OTA link params behind; drop back to
+    // the quiet ones. (A clean finish reboots, so this only matters on abort.)
+    if (was_busy && s_connected) config_link_quiet();
+}
+
+// Ask the central for a slower, low-duty connection for normal config sessions.
+// Every BLE connection event is a radio TX burst even when no data moves, and on
+// rev 1 boards each burst couples an audible click into the codec's analog
+// supply. Linux/Chrome centrals default to a 7.5-15 ms interval (66-133
+// bursts/s -- a continuous buzz); at 50-60 ms the burst rate caps near the
+// spectrum frame rate (~17-20/s), so the visualizer keeps its full 20 fps and
+// EQ writes still land within one interval, while the click density drops
+// 3-6x. Slave latency only lets us skip events we have nothing to send in, so
+// it quiets the idle page further (~4-5 bursts/s) without slowing anything
+// active. OTA re-requests the fast 15-30 ms link on BEGIN (ota_widen_link) and
+// we restore this one if the transfer aborts.
+static void config_link_quiet(void)
+{
+    esp_ble_conn_update_params_t p = {0};
+    memcpy(p.bda, s_peer_bda, sizeof(esp_bd_addr_t));
+    p.min_int = 40;    // 50 ms (1.25 ms units)
+    p.max_int = 48;    // 60 ms
+    p.latency = 3;     // skip up to 3 empty events
+    p.timeout = 600;   // 6 s (10 ms units), >> (1+latency)*max_int
+    esp_err_t e = esp_ble_gap_update_conn_params(&p);
+    if (e) ESP_LOGW(TAG, "quiet conn-param update: %s", esp_err_to_name(e));
 }
 
 // Widen the BLE link's supervision timeout before the transfer. The slot erase
@@ -845,6 +874,15 @@ static void gap_ble_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *par
             ESP_LOGI(TAG, "advertising as \"%s\"", BLE_DEVICE_NAME);
         }
         break;
+    case ESP_GAP_BLE_UPDATE_CONN_PARAMS_EVT:
+        // Confirms what the central actually granted for config_link_quiet /
+        // ota_widen_link -- the request is only a request.
+        ESP_LOGI(TAG, "conn params: status=%d interval=%.1fms latency=%d timeout=%dms",
+                 param->update_conn_params.status,
+                 param->update_conn_params.conn_int * 1.25,
+                 param->update_conn_params.latency,
+                 param->update_conn_params.timeout * 10);
+        break;
     default:
         break;
     }
@@ -886,6 +924,7 @@ static void gatts_cb(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if,
         s_mtu       = 23;   // reset to the ATT default until MTU_EVT renegotiates
         s_last_gen  = settings_generation();
         ESP_LOGI(TAG, "BLE central connected, conn_id=%d", s_conn_id);
+        config_link_quiet();   // rev 1 click mitigation: slow the connection down
         break;
 
     case ESP_GATTS_MTU_EVT:
