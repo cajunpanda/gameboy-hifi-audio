@@ -5,9 +5,11 @@
 
 #include "esp_err.h"
 
-// Cue player for the local-speaker path. A "cue" is a short sound mixed
-// additively on top of the program audio on the speaker path (never the BT
-// path). Two source kinds:
+// Cue player for the audio path. A "cue" is a short sound mixed additively on
+// top of the program audio. The DSP mixes the same rendered cue into BOTH the
+// local-speaker path and the A2DP/BT path (dsp_process_local + dsp_process_bt),
+// so cues are audible in headphones while streaming, not just on the speaker.
+// Two source kinds:
 //
 //   - synth: generated inline (sine + envelope), no storage. Used for the
 //     pairing/connect chimes.
@@ -28,6 +30,8 @@ typedef enum {
     SFX_SYNTH_DISCONNECT,   // sink disconnected: falling two-note
     SFX_SYNTH_REBOND,       // Connect/Pair button: connect-hold confirm (rising blip)
     SFX_SYNTH_MODE,         // Mode A/B toggle: hold-menu rung + Mode A exit
+    SFX_SYNTH_LOWBATT,      // battery entered the LOW band: gentle descending warning
+    SFX_SYNTH_CRITBATT,     // battery entered CRITICAL: urgent repeated low triple
     SFX_SYNTH_COUNT,
 } synth_id_t;
 

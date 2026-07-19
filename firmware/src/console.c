@@ -142,6 +142,8 @@ static int cmd_chime(int argc, char **argv)
         if      (strcmp(argv[1], "pairing")    == 0) id = SFX_SYNTH_PAIRING;
         else if (strcmp(argv[1], "connect")    == 0) id = SFX_SYNTH_CONNECT;
         else if (strcmp(argv[1], "disconnect") == 0) id = SFX_SYNTH_DISCONNECT;
+        else if (strcmp(argv[1], "lowbatt")    == 0) id = SFX_SYNTH_LOWBATT;
+        else if (strcmp(argv[1], "critbatt")   == 0) id = SFX_SYNTH_CRITBATT;
     }
     sfx_trigger_synth(id);
     return 0;
@@ -401,6 +403,19 @@ static int cmd_nr(int argc, char **argv)
                s.nr_hpf_hz, s.nr_lpf_hz, s.nr_notch_hz, s.nr_notch_q);
         printf("nr gate: thresh=%d dBFS  range=%d dB%s\n",
                s.nr_gate_thresh_db, s.nr_gate_range_db, s.nr_gate_thresh_db < 0 ? "" : "  (off)");
+        printf("nr btmute: %d dBFS%s   (BT-only hard mute)\n",
+               s.nr_bt_mute_db, s.nr_bt_mute_db < 0 ? "" : "  (off)");
+        return 0;
+    }
+    if (strcmp(argv[1], "btmute") == 0) {
+        int8_t db = s.nr_bt_mute_db;
+        if      (argc >= 3 && strcmp(argv[2], "off") == 0) db = 0;
+        else if (argc >= 3) db = (int8_t)atoi(argv[2]);
+        else { printf("usage: nr btmute <dBFS> | nr btmute off\n"); return 1; }
+        settings_set_nr_bt_mute(db);
+        settings_get(&s);
+        printf("nr btmute: %d dBFS%s\n",
+               s.nr_bt_mute_db, s.nr_bt_mute_db < 0 ? "" : "  (off)");
         return 0;
     }
     if (strcmp(argv[1], "gate") == 0) {
@@ -424,7 +439,7 @@ static int cmd_nr(int argc, char **argv)
         notch = (uint16_t)atoi(argv[2]);
         if (argc >= 4) q = (uint8_t)atoi(argv[3]);
     } else {
-        printf("usage: nr | nr off | nr hpf <hz> | nr lpf <hz> | nr notch <hz> [q] | nr gate <dBFS> [range]\n");
+        printf("usage: nr | nr off | nr hpf <hz> | nr lpf <hz> | nr notch <hz> [q] | nr gate <dBFS> [range] | nr btmute <dBFS>\n");
         return 1;
     }
     settings_set_nr(hpf, lpf, notch, q);
@@ -523,13 +538,36 @@ static int cmd_wavedump(int argc, char **argv)
     return 0;
 }
 
-// `batt`: read the battery rail (VBAT via the ADC1_CH0 sense divider).
+// `batt`: show the battery meter (VBAT, load-compensated voltage, band, percent,
+// chemistry). `batt <alkaline|nimh|lipo>`: set the battery chemistry (the meter's
+// discharge-curve model). Persist with `save`.
+static const char *const CHEM_NAMES[] = { "alkaline", "nimh", "lipo" };
+
 static int cmd_batt(int argc, char **argv)
 {
-    (void)argc; (void)argv;
-    int mv = app_sm_read_vbat_mv();
-    if (mv < 0) { printf("battery: sense unavailable\n"); return 1; }
-    printf("battery: VBAT=%d mV  (~%d%%)\n", mv, app_sm_batt_pct(mv));
+    if (argc >= 2) {
+        // `batt check`: force one meter poll now (drives the median/confirm/chime
+        // path the 60 s heartbeat normally runs) so a bench voltage sweep can be
+        // stepped through the bands without waiting on the heartbeat.
+        if (strcmp(argv[1], "check") == 0) { app_sm_batt_check(); return 0; }
+        int chem = -1;
+        for (int i = 0; i < (int)(sizeof(CHEM_NAMES) / sizeof(CHEM_NAMES[0])); i++)
+            if (strcmp(argv[1], CHEM_NAMES[i]) == 0) { chem = i; break; }
+        if (chem < 0) { printf("usage: batt [alkaline|nimh|lipo|check]\n"); return 1; }
+        settings_set_chemistry((uint8_t)chem);
+        printf("battery chemistry: %s (save to persist)\n", CHEM_NAMES[chem]);
+        return 0;
+    }
+    batt_status_t b;
+    app_sm_batt_status(&b);
+    if (b.vbat_mv < 0) { printf("battery: sense unavailable\n"); return 1; }
+    const char *chem = (b.chem < 3) ? CHEM_NAMES[b.chem] : "?";
+    if (b.pct >= 0)
+        printf("battery: VBAT=%d mV comp=%d mV  %s (~%d%%)  chem=%s\n",
+               b.vbat_mv, b.comp_mv, app_sm_batt_band_name(b.band), b.pct, chem);
+    else
+        printf("battery: VBAT=%d mV comp=%d mV  %s  chem=%s\n",
+               b.vbat_mv, b.comp_mv, app_sm_batt_band_name(b.band), chem);
     return 0;
 }
 
@@ -604,7 +642,7 @@ static void register_cmds(void)
         { .command = "eqbt",  .help = "Bluetooth EQ: eqbt on|off [bass mid treble]", .func = cmd_eqbt },
         { .command = "sfx",   .help = "Cue mixing: sfx on|off [level_dB]",        .func = cmd_sfx },
         { .command = "startup", .help = "Boot chime: startup [modern|original|custom|off]", .func = cmd_startup },
-        { .command = "chime", .help = "Play a synth cue: chime [pairing|connect|disconnect]", .func = cmd_chime },
+        { .command = "chime", .help = "Play a synth cue: chime [pairing|connect|disconnect|lowbatt|critbatt]", .func = cmd_chime },
         { .command = "play",  .help = "Play a clip: play <name>",                .func = cmd_play },
         { .command = "out1",  .help = "Tune headphone-amp level: out1 <0x00-0x21>", .func = cmd_out1 },
         { .command = "out2",  .help = "Tune speaker line-out level: out2 <0x00-0x21>", .func = cmd_out2 },
@@ -615,8 +653,8 @@ static void register_cmds(void)
         { .command = "autoconnect", .help = "BT connect-on-boot: autoconnect on|off (off=wait for R hold)", .func = cmd_autoconnect },
         { .command = "hold",  .help = "R-button hold thresholds (ms): hold [connect pair mode exit]", .func = cmd_hold },
         { .command = "wheel", .help = "VOL wheel drives volume: wheel on|off",  .func = cmd_wheel },
-        { .command = "batt",  .help = "Read battery rail voltage: batt",         .func = cmd_batt },
-        { .command = "nr",    .help = "Noise reduction: nr | hpf|lpf|notch <hz> [q] | gate <dBFS> [range]", .func = cmd_nr },
+        { .command = "batt",  .help = "Battery meter / chemistry: batt [alkaline|nimh|lipo]", .func = cmd_batt },
+        { .command = "nr",    .help = "Noise reduction: nr | hpf|lpf|notch <hz> [q] | gate <dBFS> [range] | btmute <dBFS>", .func = cmd_nr },
         { .command = "radio", .help = "RF bench controls: radio on|off | ble|bt on|off | bleint <ms> | blepwr|btpwr <dBm>", .func = cmd_radio },
         { .command = "pm",    .help = "Power bench controls: pm dfs on|off",       .func = cmd_pm },
         { .command = "wavedump",.help = "Capture ADC samples for analysis: wavedump [n]", .func = cmd_wavedump },

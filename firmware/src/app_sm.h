@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #include "esp_err.h"
 
@@ -91,11 +92,44 @@ void app_sm_vol_wheel_read(int *raw_out, int *pct_out);
 void app_sm_force_hp(int mode);
 
 // Battery sense on ADC1_CH0 (VBAT through the R20/R21 = 100k/100k divider, so
-// VBAT = 2x the sensed voltage). app_sm_read_vbat_mv returns VBAT in millivolts
-// (-1 if the sense/cali is unavailable); app_sm_batt_pct maps a reading to a
-// rough 0..100%; app_sm_batt_check is the periodic poll (call from the ~60 s
-// heartbeat) that logs VBAT and manages the low-battery latch. The volume wheel
-// is battery-referenced off the same VBAT so its calibration holds as it droops.
+// VBAT = 2x the sensed voltage). app_sm_read_vbat_mv returns the raw (loaded)
+// VBAT in millivolts, -1 if the sense/cali is unavailable. The volume wheel is
+// battery-referenced off the same VBAT so its calibration holds as it droops.
 int  app_sm_read_vbat_mv(void);
-int  app_sm_batt_pct(int vbat_mv);
+
+// Battery meter band: a chemistry-independent 4-level state the meter maps every
+// chemistry into. Ordered worst..best so numeric comparison works ("<= LOW" is
+// low-or-worse). UNKNOWN when the sense is unavailable.
+typedef enum {
+    BATT_BAND_CRITICAL = 0,
+    BATT_BAND_LOW      = 1,
+    BATT_BAND_GOOD     = 2,
+    BATT_BAND_FULL     = 3,
+    BATT_BAND_UNKNOWN  = 4,
+} batt_band_t;
+
+// A battery snapshot for the active chemistry (settings.batt_chem) and operating
+// mode. comp_mv is the load-compensated (mode-normalized) voltage the band/pct
+// are derived from; pct is 0..100 only for chemistries with a meaningful percent
+// (alkaline), else -1 (NiMH/LiPo report a band, not a fake percent).
+typedef struct {
+    int         vbat_mv;   // raw sensed VBAT (loaded), or -1 if unavailable
+    int         comp_mv;   // load-compensated voltage, or -1
+    batt_band_t band;
+    int         pct;       // 0..100, or -1 when this chemistry has no percent
+    uint8_t     chem;      // batt_chem_t the snapshot was computed for
+} batt_status_t;
+
+// Take a fresh battery snapshot (does one VBAT read + maps it through the current
+// chemistry model). Cheap enough for a BLE read/notify; stateless (no chime/latch
+// side effects — that lives in app_sm_batt_check).
+void app_sm_batt_status(batt_status_t *out);
+
+// Short human name for a band ("Full"/"Good"/"Low"/"Critical"/"--").
+const char *app_sm_batt_band_name(batt_band_t band);
+
+// Periodic battery poll (call from the ~60 s heartbeat): refreshes the meter,
+// logs VBAT/band, and drives the low-power chime with median smoothing + a
+// confirm count + a downward-crossing latch so transient load dips never false-
+// trigger. No-op chime in Mode A (the battery-saver mode, DSP path stopped).
 void app_sm_batt_check(void);

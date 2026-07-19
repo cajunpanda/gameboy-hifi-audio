@@ -185,16 +185,9 @@ static es8388_mode_t s_active_mode = ES8388_MODE_DSP;
 // VOL_RAW_MIN/MAX window was calibrated at) keeps that calibration valid as the
 // battery droops.
 #define VBAT_REF_MV       3200
-// Low-battery latch: warn under VBAT_LOW_MV, clear only above +HYST (2x AA GBA
-// rail: ~3.2 V full, ~2.4 V flat). Rough %: empty..full window below.
-#define VBAT_LOW_MV       2500
-#define VBAT_LOW_HYST_MV  150
-#define VBAT_EMPTY_MV     2400
-#define VBAT_FULL_MV      3200
 
 static adc_oneshot_unit_handle_t s_vol_adc = NULL;
 static adc_cali_handle_t s_adc1_cali = NULL;   // ADC1 raw->mV (NULL = no battery mV)
-static bool  s_batt_low      = false;   // low-battery latch (hysteresis)
 static bool  s_wheel_enabled = true;
 static int   s_vol_last_pct  = -1;
 static float s_wheel_ema     = -1.0f;   // EMA of the raw ADC (<0 = unseeded)
@@ -389,34 +382,203 @@ int app_sm_read_vbat_mv(void)
     return sense_mv * VBAT_DIVIDER_NUM;
 }
 
-// Rough battery percentage from a VBAT reading, linear across the 2x AA window.
-// -1 if the reading is invalid.
-int app_sm_batt_pct(int vbat_mv)
+// ---- battery meter --------------------------------------------------------
+// Per-chemistry discharge model. VBAT alone can't resolve state-of-charge for
+// every pack (a NiMH plateau sits flat for ~80% of its life; a regulated LiPo
+// carries no SoC signal at all), so each chemistry maps the (load-compensated)
+// voltage into a 4-level band, and only alkaline -- which is near-linear -- also
+// exposes a real percent. Thresholds are on the compensated voltage; see
+// batt_compensate(). Grounded in the 2026-07-13 power bench discharge shapes.
+typedef struct {
+    uint16_t esr_mohm;      // nominal series R (cell ESR + contacts + harness) for load comp
+    uint16_t full_mv;       // >= this: FULL band
+    uint16_t good_mv;       // >= this: GOOD band
+    uint16_t low_mv;        // >= this: LOW band; below: CRITICAL
+    bool     has_pct;       // expose a 0..100 percent (near-linear chemistries only)
+    uint16_t pct_full_mv;   // 100% anchor (compensated mV)
+    uint16_t pct_empty_mv;  // 0% anchor
+} batt_model_t;
+
+static const batt_model_t BATT_MODELS[BATT_CHEM_COUNT] = {
+    // Alkaline 2xAA: ~3.2 V fresh, near-linear slide to ~2.0 V. Real percent.
+    [BATT_CHEM_ALKALINE] = {
+        .esr_mohm = 250,
+        .full_mv = 2900, .good_mv = 2400, .low_mv = 2250,
+        .has_pct = true, .pct_full_mv = 3150, .pct_empty_mv = 2150,
+    },
+    // NiMH 2xAA: brief high off-charger, long 2.4-2.5 V plateau (~80% of life),
+    // knee ~2.2 V, then a fast crash. Banded only -- a percent would sit at ~50%
+    // for hours then collapse. Low ESR, so load comp is small.
+    [BATT_CHEM_NIMH] = {
+        .esr_mohm = 120,
+        .full_mv = 2550, .good_mv = 2300, .low_mv = 2150,
+        .has_pct = false,
+    },
+    // Regulated LiPo mod: flat ~3.0-3.2 V until the regulator drops out, then a
+    // fast fall. No SoC signal; the bands just mark "regulating" vs "dropout
+    // imminent" vs "dropped out". Tight window, low effective ESR.
+    [BATT_CHEM_LIPO_REG] = {
+        .esr_mohm = 60,
+        .full_mv = 2900, .good_mv = 2850, .low_mv = 2700,
+        .has_pct = false,
+    },
+};
+
+// Estimated *variable* pack current (mA) relative to the reference Mode B speaker
+// mode, used for load compensation. The ~constant GBA logic/screen floor is NOT
+// modelled here -- it's absorbed into the voltage anchors above (which are the
+// speaker-mode loaded curve); this only cancels the level STEP when the operating
+// mode changes. Extend with additional configured high-draw terms (e.g. an IPS
+// backlight brightness) as they're added -- each adds its own signed delta.
+#define BATT_I_STREAM_DELTA_MA   125   // BT streaming premium over speaker (bench 2026-07-13)
+#define BATT_I_MODE_A_DELTA_MA   (-48) // Mode A draws ~48 mA below speaker (bench)
+static int batt_var_current_ma(void)
 {
-    if (vbat_mv < 0)              return -1;
-    if (vbat_mv <= VBAT_EMPTY_MV) return 0;
-    if (vbat_mv >= VBAT_FULL_MV)  return 100;
-    return (vbat_mv - VBAT_EMPTY_MV) * 100 / (VBAT_FULL_MV - VBAT_EMPTY_MV);
+    int ma = 0;
+    if (s_boot_into_mode_a)           ma += BATT_I_MODE_A_DELTA_MA;
+    else if (s_state == ST_STREAMING) ma += BATT_I_STREAM_DELTA_MA;
+    // future: += ips_current_delta_ma(settings.ips_level);
+    return ma;
 }
 
-// Periodic battery poll (called from the ~60 s heartbeat). Logs VBAT and drives
-// the low-battery latch with hysteresis: warn once on the way down, clear only
-// after a solid recovery.
+// Add the mode's I*R back onto the sensed voltage so the reported level doesn't
+// step when the mode changes (Vspeaker_equiv = Vmeasured + Idelta*R). A no-op in
+// the reference speaker mode (Idelta = 0).
+static int batt_compensate(int vbat_mv, const batt_model_t *m)
+{
+    if (vbat_mv < 0) return -1;
+    return vbat_mv + batt_var_current_ma() * (int)m->esr_mohm / 1000;
+}
+
+static const batt_model_t *batt_model(uint8_t chem)
+{
+    if (chem >= BATT_CHEM_COUNT) chem = BATT_CHEM_ALKALINE;
+    return &BATT_MODELS[chem];
+}
+
+static batt_band_t batt_band_of(int comp_mv, const batt_model_t *m)
+{
+    if (comp_mv < 0)           return BATT_BAND_UNKNOWN;
+    if (comp_mv >= m->full_mv) return BATT_BAND_FULL;
+    if (comp_mv >= m->good_mv) return BATT_BAND_GOOD;
+    if (comp_mv >= m->low_mv)  return BATT_BAND_LOW;
+    return BATT_BAND_CRITICAL;
+}
+
+static int batt_pct_of(int comp_mv, const batt_model_t *m)
+{
+    if (!m->has_pct || comp_mv < 0)     return -1;
+    if (comp_mv >= m->pct_full_mv)      return 100;
+    if (comp_mv <= m->pct_empty_mv)     return 0;
+    return (comp_mv - m->pct_empty_mv) * 100 / (m->pct_full_mv - m->pct_empty_mv);
+}
+
+const char *app_sm_batt_band_name(batt_band_t band)
+{
+    switch (band) {
+    case BATT_BAND_FULL:     return "Full";
+    case BATT_BAND_GOOD:     return "Good";
+    case BATT_BAND_LOW:      return "Low";
+    case BATT_BAND_CRITICAL: return "Critical";
+    default:                 return "--";
+    }
+}
+
+void app_sm_batt_status(batt_status_t *out)
+{
+    if (!out) return;
+    gbhifi_settings_t s;
+    settings_get(&s);
+    const batt_model_t *m = batt_model(s.batt_chem);
+    int mv   = app_sm_read_vbat_mv();
+    int comp = batt_compensate(mv, m);
+    out->chem    = s.batt_chem;
+    out->vbat_mv = mv;
+    out->comp_mv = comp;
+    out->band    = batt_band_of(comp, m);
+    out->pct     = batt_pct_of(comp, m);
+}
+
+// Low-power chime + latch. Median over the last few polls rejects a single
+// load-burst dip; a new band must repeat for BATT_CONFIRM_POLLS before it's
+// committed; the chime fires only on a DOWNWARD committed crossing (never on the
+// way up, never from the boot UNKNOWN), and critical re-chimes on a slow cadence.
+#define BATT_MEDIAN_N        3     // polls in the median window (~3 min at 60 s)
+#define BATT_CONFIRM_POLLS   2     // consecutive polls a new band must hold
+#define BATT_CRIT_RECHIME    5     // re-chime CRITICAL every N polls (~5 min)
+
 void app_sm_batt_check(void)
 {
+    static int         hist[BATT_MEDIAN_N];
+    static int         hist_n = 0;
+    static batt_band_t committed = BATT_BAND_UNKNOWN;  // last confirmed band
+    static batt_band_t cand      = BATT_BAND_UNKNOWN;  // candidate awaiting confirm
+    static int         cand_n    = 0;
+    static int         crit_age  = 0;                  // polls since last CRITICAL chime
+
+    gbhifi_settings_t s;
+    settings_get(&s);
+    const batt_model_t *m = batt_model(s.batt_chem);
+
     int mv = app_sm_read_vbat_mv();
-    if (mv < 0) return;
-    int pct = app_sm_batt_pct(mv);
-    if (!s_batt_low && mv < VBAT_LOW_MV) {
-        s_batt_low = true;
-        ESP_LOGW(TAG, "battery LOW: VBAT=%d mV (~%d%%)", mv, pct);
-    } else if (s_batt_low && mv > VBAT_LOW_MV + VBAT_LOW_HYST_MV) {
-        s_batt_low = false;
-        ESP_LOGI(TAG, "battery recovered: VBAT=%d mV (~%d%%)", mv, pct);
-    } else {
-        ESP_LOGI(TAG, "battery: VBAT=%d mV (~%d%%)%s",
-                 mv, pct, s_batt_low ? " [LOW]" : "");
+    if (mv < 0) return;                 // sense down; hold state, no chime
+    int comp = batt_compensate(mv, m);
+
+    // Median of the last BATT_MEDIAN_N compensated readings (insertion into a
+    // tiny ring, then a copy-and-sort -- N is 3).
+    if (hist_n < BATT_MEDIAN_N) hist[hist_n++] = comp;
+    else { for (int i = 1; i < BATT_MEDIAN_N; i++) hist[i - 1] = hist[i];
+           hist[BATT_MEDIAN_N - 1] = comp; }
+    int tmp[BATT_MEDIAN_N];
+    for (int i = 0; i < hist_n; i++) tmp[i] = hist[i];
+    for (int i = 0; i < hist_n; i++)
+        for (int j = i + 1; j < hist_n; j++)
+            if (tmp[j] < tmp[i]) { int t = tmp[i]; tmp[i] = tmp[j]; tmp[j] = t; }
+    int med = tmp[hist_n / 2];
+
+    batt_band_t inst = batt_band_of(med, m);
+    int pct = batt_pct_of(med, m);
+    if (pct >= 0)
+        ESP_LOGI(TAG, "battery: VBAT=%d mV comp=%d mV %s (~%d%%) chem=%u",
+                 mv, med, app_sm_batt_band_name(inst), pct, s.batt_chem);
+    else
+        ESP_LOGI(TAG, "battery: VBAT=%d mV comp=%d mV %s chem=%u",
+                 mv, med, app_sm_batt_band_name(inst), s.batt_chem);
+
+    // Confirm a band change before committing (debounce against edge dither).
+    if (inst == cand) { if (cand_n < BATT_CONFIRM_POLLS) cand_n++; }
+    else              { cand = inst; cand_n = 1; }
+    if (cand_n < BATT_CONFIRM_POLLS || cand == committed) {
+        // Not yet a committed change (or unchanged): still handle CRITICAL
+        // re-chime while parked in the critical band.
+        if (committed == BATT_BAND_CRITICAL) crit_age++;
+        if (committed == BATT_BAND_CRITICAL && crit_age >= BATT_CRIT_RECHIME &&
+            !s_boot_into_mode_a) {
+            crit_age = 0;
+            CUE(SFX_SYNTH_CRITBATT);
+        }
+        return;
     }
+
+    batt_band_t prev = committed;
+    committed = cand;
+
+    // Chime only on a downward crossing into LOW/CRITICAL, and never from the
+    // boot UNKNOWN (the reading is still settling; a boot-time false alarm is the
+    // exact thing to avoid). Mode A stays silent -- the DSP path is stopped and
+    // it's the opt-in battery-saver mode.
+    bool downward = (prev != BATT_BAND_UNKNOWN) && (committed < prev);
+    if (downward && !s_boot_into_mode_a) {
+        if (committed == BATT_BAND_CRITICAL) {
+            crit_age = 0;
+            ESP_LOGW(TAG, "battery CRITICAL chime (%s -> Critical)", app_sm_batt_band_name(prev));
+            CUE(SFX_SYNTH_CRITBATT);
+        } else if (committed == BATT_BAND_LOW) {
+            ESP_LOGW(TAG, "battery LOW chime (%s -> Low)", app_sm_batt_band_name(prev));
+            CUE(SFX_SYNTH_LOWBATT);
+        }
+    }
+    if (committed != BATT_BAND_CRITICAL) crit_age = 0;
 }
 
 // Apply the wheel reading to the active path's volume, with hysteresis. No-op

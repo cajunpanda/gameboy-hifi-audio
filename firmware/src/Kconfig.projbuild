@@ -326,6 +326,18 @@ menu "GameBoy HiFi Audio"
             default 30
             range 0 60
 
+        config GBHIFI_DSP_NR_BT_MUTE_DB
+            int "Bluetooth hard-mute threshold, dBFS (0 = off)"
+            default -40
+            range -90 0
+            help
+                BT-path only: sustained below this RMS the A2DP program is driven
+                to true digital zero so the SBC encoder sees real silence instead
+                of rendering the low-level floor as hash. Sits below the gate
+                threshold so quiet program (e.g. engine hum) still streams; raise
+                it toward the gate if floor/TX-transient hash returns in silence.
+                Re-tune per GBA via `nr btmute <dBFS>` (0 = off).
+
     endmenu
 
     menu "Operating modes"

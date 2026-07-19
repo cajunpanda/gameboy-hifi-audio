@@ -86,9 +86,13 @@ static float s_bt_gate_gain   = 1.0f;   // smoothed applied gain
 // the local gate threshold (they no longer defeat the detector outright now
 // that it keys on RMS, but the margin is thin) -- this threshold sits clear of
 // the floor + those transients. Below it for GATE_MUTE_HOLD blocks, the BT
-// program is driven to digital zero.
-#define BT_MUTE_THRESH_DB   -30.0f
-static int s_bt_gate_silence = 0;   // consecutive below-threshold blocks (BT mute hold)
+// program is driven to digital zero. Runtime-tunable per GBA (settings
+// nr_bt_mute_db / `nr btmute`): set it too high and quiet program (e.g. engine
+// hum) gets swallowed on BT while playing fine locally; too low and the floor
+// hash returns. 0 dBFS disables the hard mute (the expander still runs).
+static int   s_bt_gate_silence = 0;   // consecutive below-threshold blocks (BT mute hold)
+static bool  s_bt_mute_on   = true;   // BT hard mute enabled (nr_bt_mute_db < 0)
+static float s_bt_mute_db   = -40.0f; // BT hard-mute threshold, dBFS
 
 static uint32_t s_last_gen = 0xffffffffu;
 // Which local-path EQ profile is live: false = Speaker EQ (HP unplugged),
@@ -219,6 +223,8 @@ static void maybe_recompute(void)
     s_gate_on        = s.nr_gate_thresh_db < 0;   // 0 dBFS threshold = off
     s_gate_thresh_db = (float)s.nr_gate_thresh_db;
     s_gate_range_db  = (float)s.nr_gate_range_db;
+    s_bt_mute_on     = s.nr_bt_mute_db < 0;        // 0 dBFS = BT hard mute off
+    s_bt_mute_db     = (float)s.nr_bt_mute_db;
 
     float v   = (float)s.speaker_vol_pct / 100.0f;
     float bv  = (float)s.bt_vol_pct      / 100.0f;
@@ -470,12 +476,12 @@ void dsp_process_bt(int16_t *stereo, size_t frames)
         // (see BT_MUTE_THRESH_DB) so it fires on the low-level GBA floor -- which
         // parks near the local gate threshold and, with the TX transients, never
         // trips the shared silence detector -- independently of the local amp-mute.
-        if (rms_db < BT_MUTE_THRESH_DB) {
+        if (s_bt_mute_on && rms_db < s_bt_mute_db) {
             if (s_bt_gate_silence < GATE_MUTE_HOLD) s_bt_gate_silence++;
         } else {
             s_bt_gate_silence = 0;
         }
-        if (s_bt_gate_silence >= GATE_MUTE_HOLD) s_bt_gate_target = 0.0f;
+        if (s_bt_mute_on && s_bt_gate_silence >= GATE_MUTE_HOLD) s_bt_gate_target = 0.0f;
     } else {
         s_bt_gate_target = 1.0f;
         s_bt_gate_silence = 0;

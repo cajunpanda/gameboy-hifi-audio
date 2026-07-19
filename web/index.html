@@ -519,6 +519,11 @@
   .drop input { display: none; }
   .bar { height: 0.5rem; border-radius: var(--r-pill); background: var(--control); border: 1px solid var(--line); overflow: hidden; margin: 0.55rem 0 0.45rem; }
   .bar > i { display: block; height: 100%; width: 100%; transform: scaleX(0); transform-origin: left center; background: var(--signal); transition: transform 0.2s var(--ease); }
+  /* Battery level color by band: Good/Full use the default signal color. */
+  #battLevel[data-band="1"] { color: var(--warn); }
+  #battLevel[data-band="0"] { color: var(--danger); }
+  #battBar[data-band="1"] { background: var(--warn); }
+  #battBar[data-band="0"] { background: var(--danger); }
   .fw-status { display: flex; justify-content: space-between; gap: 1rem; font-family: var(--font-mono); font-size: 0.76rem; color: var(--muted); min-height: 1.2em; }
   .fw-status .rate { color: var(--faint); flex: 0 0 auto; }
 
@@ -695,6 +700,24 @@
         <!-- ---------- DEVICE ---------- -->
         <section class="tab-panel stack" data-tab="device" role="tabpanel" hidden>
           <div class="card">
+            <div class="card-head"><h2>Battery</h2><span class="hint" id="battLevel" data-band="4">—</span></div>
+            <div class="bar" id="battBarWrap" hidden><i id="battBar"></i></div>
+            <p class="note" id="battDetail">Reading…</p>
+            <div class="ctl" style="margin-top:0.9rem">
+              <div class="ctl-head"><label for="battChem">Battery type</label></div>
+              <select id="battChem">
+                <option value="0">Alkaline (AA)</option>
+                <option value="1">NiMH rechargeable (AA)</option>
+                <option value="2">Regulated LiPo pack</option>
+              </select>
+              <p class="note">Pick what's in the console so the meter reads right. Alkaline shows a
+                percentage. NiMH and regulated LiPo packs hold a nearly flat voltage for most of their
+                life, so they show a level (Full / Good / Low) instead of a fake percentage. The mod
+                chimes when the level drops to Low, and again at Critical.</p>
+            </div>
+          </div>
+
+          <div class="card">
             <div class="card-head"><h2>Mode</h2></div>
             <p class="note">The mod runs in <b>Full mode</b> (all the sound processing) or <b>Battery saver</b>
               (low power, longer playtime). Switch by holding the <b>R button</b> on the console until the third
@@ -813,7 +836,7 @@ const LOG      = '5a4d0005-1f2e-4c6b-9a8f-0102030405aa';  // notify (device log/
 const CMD      = '5a4d0006-1f2e-4c6b-9a8f-0102030405aa';  // write (console command line)
 const SPECTRUM = '5a4d0007-1f2e-4c6b-9a8f-0102030405aa';  // notify (stereo audio spectrum: L bytes then R bytes)
 const WIRE_LEN = 64;
-const VERSION  = 6;
+const VERSION  = 7;
 // OTA opcodes/status, must match the firmware BLE config.
 // Mirrors the enums in ble_config.c. Clip upload reuses the OTACTL/OTADATA
 // characteristics; the two are mutually exclusive, so `ota.kind` says which.
@@ -850,14 +873,17 @@ const banner = (m) => { const b = $('banner'); b.textContent = m; b.classList.ad
 //   [14] modeA (read-only status) [15] bootModeA (persist Mode A across power cycles)
 //   [16..17] holdConnect u16 [18..19] holdPair u16 [20..21] holdMode u16 [22..23] holdExit u16
 //   [24] eqHpEn [25..27] eqHp i8 x3 (headphone EQ)
-//   [28] startupMode (0=modern 1=original 2=custom 3=off)   [29..63] reserved
+//   [28] startupMode (0=modern 1=original 2=custom 3=off) [29] customClip (read-only)
+//   [30] battChem (0=alkaline 1=nimh 2=lipo-reg)
+//   [31..32] battVbat u16 mV (read-only) [33] battBand (read-only) [34] battPct 0..100/0xFF (read-only)
+//   [35..63] reserved
 const FIELDS = [   // writable u8 ('u') / i8 ('i') / bool ('b')
   ['spkVol',2,'u'], ['btVol',3,'u'],
   ['eqEn',4,'b'], ['eqBass',5,'i'], ['eqMid',6,'i'], ['eqTreble',7,'i'],
   ['eqHpEn',24,'b'], ['eqHpBass',25,'i'], ['eqHpMid',26,'i'], ['eqHpTreble',27,'i'],
   ['eqBtEn',8,'b'], ['eqBtBass',9,'i'], ['eqBtMid',10,'i'], ['eqBtTreble',11,'i'],
   ['sfxEn',12,'b'], ['sfxLevel',13,'i'], ['startupMode',28,'u'],
-  ['bootModeA',15,'b'],
+  ['bootModeA',15,'b'], ['battChem',30,'u'],
 ];
 const HOLD_FIELDS = [   // writable u16 ('h')
   ['holdConnect',16], ['holdPair',18], ['holdMode',20], ['holdExit',22],
@@ -881,6 +907,7 @@ function decodeToControls(dv) {
   // Byte 29 is read-only status: whether /clips/startup-custom.gsfx exists.
   // Older firmware sends a shorter blob, so absent means "no custom clip".
   setClipCustomAvailable(dv.byteLength > 29 && dv.getUint8(29) !== 0);
+  renderBattery(dv);   // bytes 30..34: chemistry (also a FIELD) + read-only meter
   $('modeStatus').textContent = lastModeA ? 'Battery saver' : 'Full mode';
   $('modeStatusPill').dataset.mode = lastModeA ? 'A' : 'B';
   syncOutputs();
@@ -911,6 +938,44 @@ function syncOutputs() {
     else o.value = v + (id.includes('Vol') ? '%' : '');
   }
 }
+
+// Read-only battery meter (bytes 31..34; chemistry at 30 is handled as a FIELD).
+// Alkaline reports a real percent + bar; NiMH and regulated LiPo hold a flat
+// voltage so they show only a level word (Full / Good / Low / Critical), never a
+// fake percent (pct byte 0xFF). Firmware older than v12 omits these bytes.
+const BATT_BANDS = ['Critical', 'Low', 'Good', 'Full', '—'];
+function renderBattery(dv) {
+  const level = $('battLevel'), detail = $('battDetail'), wrap = $('battBarWrap'), bar = $('battBar');
+  if (!level) return;
+  if (dv.byteLength <= 34) {
+    level.textContent = '—'; level.dataset.band = 4;
+    detail.textContent = 'Battery meter needs firmware v12 or newer.';
+    wrap.hidden = true; return;
+  }
+  const vbat = dv.getUint16(31, true);
+  const band = Math.min(dv.getUint8(33), 4);
+  const pct  = dv.getUint8(34);                 // 0xFF = no percent for this chemistry
+  level.textContent = BATT_BANDS[band];
+  level.dataset.band = band;
+  const volts = vbat > 0 ? (vbat / 1000).toFixed(2) + ' V' : 'no reading';
+  if (pct !== 0xff) {
+    wrap.hidden = false;
+    bar.style.transform = `scaleX(${pct / 100})`;
+    bar.dataset.band = band;
+    detail.textContent = `${pct}% · ${volts}`;
+  } else {
+    wrap.hidden = true;
+    detail.textContent = `${BATT_BANDS[band]} · ${volts}`;
+  }
+}
+
+// The settings notify only fires on a settings change, so poll a fresh read on a
+// slow cadence to keep the live battery readout current without clobbering any
+// in-progress control edit (renderBattery only touches the read-only widget).
+setInterval(() => {
+  if (settingsChr && !xferActive())
+    settingsChr.readValue().then(renderBattery).catch(() => {});
+}, 30000);
 
 // A transfer owns the link. Another GATT write during the data phase makes the
 // device's ATT server discard data commands, and write-without-response never

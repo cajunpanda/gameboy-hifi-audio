@@ -80,9 +80,11 @@ static const gbhifi_settings_t s_defaults = {
     .nr_notch_q      = CONFIG_GBHIFI_DSP_NR_NOTCH_Q,
     .nr_gate_thresh_db = CONFIG_GBHIFI_DSP_NR_GATE_THRESH_DB,
     .nr_gate_range_db  = CONFIG_GBHIFI_DSP_NR_GATE_RANGE_DB,
+    .nr_bt_mute_db     = CONFIG_GBHIFI_DSP_NR_BT_MUTE_DB,
     .mode_a          = CONFIG_GBHIFI_DEFAULT_MODE_A,
     .boot_mode_a     = CONFIG_GBHIFI_BOOT_MODE_A,
     .auto_connect    = CONFIG_GBHIFI_AUTO_CONNECT,
+    .batt_chem       = BATT_CHEM_ALKALINE,
     // Absolute hold thresholds: connect at CONNECT_HOLD_MS, pair + PAIR_EXTRA_MS
     // beyond that, mode + MODE_EXTRA_MS beyond pair.
     .hold_connect_ms   = CONFIG_GBHIFI_CONNECT_HOLD_MS,
@@ -109,12 +111,14 @@ static void sanitise(gbhifi_settings_t *s)
     s->eq_bt_treble_db = CLAMP(s->eq_bt_treble_db, EQ_DB_MIN,  EQ_DB_MAX);
     s->sfx_level_db    = CLAMP(s->sfx_level_db,    SFX_DB_MIN, SFX_DB_MAX);
     if (s->startup_mode >= STARTUP_MODE_COUNT) s->startup_mode = STARTUP_MODERN;
+    if (s->batt_chem    >= BATT_CHEM_COUNT)    s->batt_chem    = BATT_CHEM_ALKALINE;
     if (s->nr_hpf_hz   > NR_HZ_MAX) s->nr_hpf_hz   = NR_HZ_MAX;
     if (s->nr_lpf_hz   > NR_HZ_MAX) s->nr_lpf_hz   = NR_HZ_MAX;
     if (s->nr_notch_hz > NR_HZ_MAX) s->nr_notch_hz = NR_HZ_MAX;
     s->nr_notch_q      = CLAMP(s->nr_notch_q, NR_Q_MIN, NR_Q_MAX);
     s->nr_gate_thresh_db = CLAMP(s->nr_gate_thresh_db, GATE_DB_MIN, 0);
     if (s->nr_gate_range_db > GATE_RANGE_MAX) s->nr_gate_range_db = GATE_RANGE_MAX;
+    s->nr_bt_mute_db     = CLAMP(s->nr_bt_mute_db, GATE_DB_MIN, 0);
 
     // Hold thresholds: clamp each, then enforce strictly-increasing order so
     // buttons.c's per-rung re-arm intervals (pair-connect, mode-pair) stay
@@ -165,9 +169,9 @@ esp_err_t settings_init(void)
              s_cur.eq_bt_enabled,
              s_cur.eq_bt_bass_db, s_cur.eq_bt_mid_db, s_cur.eq_bt_treble_db,
              s_cur.sfx_enabled, s_cur.sfx_level_db);
-    ESP_LOGI(TAG, "mode=%c boot_mode_a=%d auto_connect=%d hold[con/pair/mode/exit]=%u/%u/%u/%u ms",
+    ESP_LOGI(TAG, "mode=%c boot_mode_a=%d auto_connect=%d chem=%u hold[con/pair/mode/exit]=%u/%u/%u/%u ms",
              s_cur.mode_a ? 'A' : 'B', s_cur.boot_mode_a, s_cur.auto_connect,
-             s_cur.hold_connect_ms, s_cur.hold_pair_ms,
+             s_cur.batt_chem, s_cur.hold_connect_ms, s_cur.hold_pair_ms,
              s_cur.hold_mode_ms, s_cur.hold_mode_exit_ms);
     return ESP_OK;
 }
@@ -301,6 +305,16 @@ esp_err_t settings_set_nr_gate(int8_t thresh_db, uint8_t range_db)
     return ESP_OK;
 }
 
+esp_err_t settings_set_nr_bt_mute(int8_t db)
+{
+    if (!s_lock) return ESP_ERR_INVALID_STATE;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    s_cur.nr_bt_mute_db = CLAMP(db, GATE_DB_MIN, 0);
+    s_generation++;
+    xSemaphoreGive(s_lock);
+    return ESP_OK;
+}
+
 esp_err_t settings_set_mode_a(bool mode_a)
 {
     if (!s_lock) return ESP_ERR_INVALID_STATE;
@@ -326,6 +340,16 @@ esp_err_t settings_set_auto_connect(bool auto_connect)
     if (!s_lock) return ESP_ERR_INVALID_STATE;
     xSemaphoreTake(s_lock, portMAX_DELAY);
     s_cur.auto_connect = auto_connect;
+    s_generation++;
+    xSemaphoreGive(s_lock);
+    return ESP_OK;
+}
+
+esp_err_t settings_set_chemistry(uint8_t chem)
+{
+    if (!s_lock) return ESP_ERR_INVALID_STATE;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    s_cur.batt_chem = (chem < BATT_CHEM_COUNT) ? chem : BATT_CHEM_ALKALINE;
     s_generation++;
     xSemaphoreGive(s_lock);
     return ESP_OK;

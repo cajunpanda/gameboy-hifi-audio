@@ -17,7 +17,7 @@
 // "dsp"). Bump GBHIFI_SETTINGS_VERSION when the struct layout changes; an
 // older/absent blob falls back to the Kconfig-seeded defaults.
 
-#define GBHIFI_SETTINGS_VERSION 11
+#define GBHIFI_SETTINGS_VERSION 13
 
 // Which boot chime the mod voices on a genuine power-on. Clip modes stream
 // /clips/<name>.gsfx; STARTUP_OFF plays nothing and leaves the live GBA
@@ -36,6 +36,19 @@ typedef enum {
 // for STARTUP_OFF and any unknown value, so a forward-version NVS blob cannot
 // voice the wrong chime.
 const char *settings_startup_clip(uint8_t mode);
+
+// Battery chemistry. Selects the discharge-curve model the battery meter maps
+// VBAT through (each chemistry droops differently under load), and the nominal
+// series resistance used for load compensation. The single user-facing accuracy
+// knob for the meter; everything else is derived. Default ALKALINE matches a
+// stock 2xAA GBA and the historical linear curve. Values are persisted; append
+// only, never renumber.
+typedef enum {
+    BATT_CHEM_ALKALINE = 0,  // 2xAA alkaline: ~3.2 V fresh, near-linear to ~2.0 V
+    BATT_CHEM_NIMH     = 1,  // 2xAA NiMH: long 2.4-2.5 V plateau, then a fast knee
+    BATT_CHEM_LIPO_REG = 2,  // regulated LiPo mod: flat ~3.0-3.2 V until dropout
+    BATT_CHEM_COUNT,
+} batt_chem_t;
 
 typedef struct {
     uint16_t version;          // == GBHIFI_SETTINGS_VERSION
@@ -88,6 +101,13 @@ typedef struct {
     // floor fades out in quiet passages (kills "worst when silent"). 0 dBFS = off.
     int8_t   nr_gate_thresh_db; // threshold, dBFS (0 = off; else negative)
     uint8_t  nr_gate_range_db;  // max attenuation when fully closed, dB
+    // Bluetooth-only hard mute: sustained below this RMS (dBFS) the A2DP program
+    // is driven to true digital zero, so the SBC encoder sees real silence instead
+    // of rendering the low-level floor as hash. More aggressive than the shared
+    // expander above; BT-path only (the local analog path tolerates a low floor).
+    // 0 = off (no hard mute; the expander still runs). Set below the gate
+    // threshold to hard-mute only true silence and let quiet program through.
+    int8_t   nr_bt_mute_db;
 
     // ---- Operating-mode preferences ----
     // Sticky user choice of audio path. app_sm owns the actual transition; a
@@ -108,6 +128,10 @@ typedef struct {
     // the legacy behavior. app_sm reads this at boot; a control surface only
     // flips the flag.
     bool     auto_connect;
+
+    // Battery chemistry (batt_chem_t). Selects the meter's discharge curve +
+    // nominal load-compensation resistance. app_sm reads it each battery poll.
+    uint8_t  batt_chem;
 
     // ---- R-button hold-menu thresholds (ms) ----
     // The Connect/Pair (R) button drives a chime-guided hold menu: held past
@@ -150,9 +174,13 @@ esp_err_t settings_set_startup_mode(uint8_t mode);
 esp_err_t settings_set_nr(uint16_t hpf_hz, uint16_t lpf_hz, uint16_t notch_hz,
                           uint8_t notch_q);
 esp_err_t settings_set_nr_gate(int8_t thresh_db, uint8_t range_db);
+// Set the Bluetooth hard-mute threshold (dBFS, <= 0; 0 = off).
+esp_err_t settings_set_nr_bt_mute(int8_t db);
 esp_err_t settings_set_mode_a(bool mode_a);
 esp_err_t settings_set_boot_mode_a(bool boot_mode_a);
 esp_err_t settings_set_auto_connect(bool auto_connect);
+// Select the battery chemistry (batt_chem_t). Out-of-range falls back to ALKALINE.
+esp_err_t settings_set_chemistry(uint8_t chem);
 // Set the R-button hold-menu thresholds (ms). Clamped + re-ordered so
 // connect <= pair <= mode (sanitise()). mode_exit is independent.
 esp_err_t settings_set_hold_timings(uint16_t connect_ms, uint16_t pair_ms,

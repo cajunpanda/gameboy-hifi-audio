@@ -113,7 +113,12 @@ static const uint8_t SPEC_UUID128[16] = {
 //   ---- added in version 11 ----
 //   [28] startup_mode (startup_mode_t: 0=modern 1=original 2=custom 3=off)
 //   [29] custom clip present (READ-ONLY status, writes ignored)
-//   [30..63] reserved, zero
+//   ---- added in version 12 ----
+//   [30] batt_chem (batt_chem_t: 0=alkaline 1=nimh 2=lipo-reg)
+//   [31..32] batt vbat_mv u16 (READ-ONLY status, writes ignored)
+//   [33] batt band (batt_band_t: 0=crit 1=low 2=good 3=full 4=unknown; READ-ONLY)
+//   [34] batt pct 0..100, 0xFF = no percent for this chemistry (READ-ONLY)
+//   [35..63] reserved, zero
 
 // Action characteristic opcodes (byte 0 of the write).
 enum {
@@ -401,8 +406,17 @@ static void settings_to_wire(uint8_t *b)
     b[28] = s.startup_mode;
     // Status, not a setting: tells the UI whether to offer the Custom choice.
     b[29] = fs_clip_exists(CLIP_UPLOAD_NAME) ? 1 : 0;
+    // ---- version 12: battery chemistry (setting) + live meter (status) ----
+    b[30] = s.batt_chem;
+    batt_status_t bat;
+    app_sm_batt_status(&bat);
+    uint16_t vb = (bat.vbat_mv > 0) ? (uint16_t)bat.vbat_mv : 0;
+    b[31] = (uint8_t)(vb & 0xff);
+    b[32] = (uint8_t)(vb >> 8);
+    b[33] = (uint8_t)bat.band;
+    b[34] = (bat.pct >= 0) ? (uint8_t)bat.pct : 0xff;   // 0xFF = no percent (banded chem)
     // Reserved tail: zeroed so a UI can tell "field not set" from stale bytes.
-    memset(&b[30], 0, SETTINGS_WIRE_LEN - 30);
+    memset(&b[35], 0, SETTINGS_WIRE_LEN - 35);
 }
 
 // Apply a settings write through the validating setters (live, not persisted;
@@ -431,6 +445,8 @@ static void wire_to_settings(const uint8_t *b, uint16_t len)
                               (uint16_t)(b[22] | (b[23] << 8)));
     // ---- version 11 and later: only if the write actually carried them ----
     if (len > 28) settings_set_startup_mode(b[28]);
+    // ---- version 12: battery chemistry (bytes 31..34 are read-only status) ----
+    if (len > 30) settings_set_chemistry(b[30]);
 }
 
 static void do_action(const uint8_t *v, uint16_t len)

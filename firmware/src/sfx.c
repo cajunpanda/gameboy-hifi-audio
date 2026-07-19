@@ -158,6 +158,10 @@ static const synth_note_t CUE_REBOND[]     = {            // A4 to E5 rising bli
     { 440.00f, NF(70) }, { 659.25f, NF(110) } };
 static const synth_note_t CUE_MODE[]       = {            // C5 G5 C6 mode arp
     { 523.25f, NF(80) }, { 783.99f, NF(80) }, { 1046.50f, NF(160) } };
+static const synth_note_t CUE_LOWBATT[]    = {            // A4 to F4 falling: gentle
+    { 440.00f, NF(140) }, { 349.23f, NF(300) } };
+static const synth_note_t CUE_CRITBATT[]   = {            // G4 x3 low triple: urgent
+    { 392.00f, NF(120) }, { 392.00f, NF(120) }, { 392.00f, NF(260) } };
 
 static const struct { const synth_note_t *notes; int count; } SYNTH_CUES[] = {
     [SFX_SYNTH_PAIRING]    = { CUE_PAIRING,    2 },
@@ -165,6 +169,8 @@ static const struct { const synth_note_t *notes; int count; } SYNTH_CUES[] = {
     [SFX_SYNTH_DISCONNECT] = { CUE_DISCONNECT, 2 },
     [SFX_SYNTH_REBOND]     = { CUE_REBOND,     2 },
     [SFX_SYNTH_MODE]       = { CUE_MODE,       3 },
+    [SFX_SYNTH_LOWBATT]    = { CUE_LOWBATT,    2 },
+    [SFX_SYNTH_CRITBATT]   = { CUE_CRITBATT,   3 },
 };
 
 #define SINE_LUT_SIZE  1024                 // power of 2 for index mask, no modulo
