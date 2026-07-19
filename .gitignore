@@ -6,7 +6,11 @@ firmware/.vscode/
 
 # ESP-IDF / PlatformIO generated files (regenerated each build)
 firmware/build/
-firmware/CMakeLists.txt
+# NOTE: firmware/CMakeLists.txt is intentionally TRACKED (not ignored). PlatformIO
+# only generates it when absent and respects a present one; it sets the IDF
+# project name, which is embedded in the app descriptor and used as the OTA
+# identity gate (ble_config.c). A regenerated project(firmware) would fail that
+# gate, so the customized project(gameboy-hifi-audio) must be committed.
 firmware/sdkconfig
 firmware/sdkconfig.old
 firmware/sdkconfig.prod

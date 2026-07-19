@@ -654,6 +654,31 @@ static void ota_handle_end(void)
     esp_err_t e = esp_ota_end(s_ota_handle);
     s_ota_handle = 0;
     if (e != ESP_OK) { s_ota_active = false; ota_error(6, esp_err_to_name(e)); ota_cleanup(true); return; }
+
+    // Identity gate. esp_ota_end() proved the image is a structurally valid,
+    // SHA-256-consistent ESP32 app -- but not that it's OURS. Refuse to boot it
+    // unless its app-descriptor project name matches the running firmware's, so a
+    // stray/other ESP32 image pushed to the OTA characteristic can't take over.
+    // We reject here, before set_boot_partition, so the current firmware keeps
+    // running; the mismatched image sits inert in the inactive slot until the
+    // next OTA overwrites it. (The descriptor is now on flash and readable since
+    // esp_ota_end succeeded.)
+    esp_app_desc_t got;
+    const esp_app_desc_t *self = esp_app_get_description();
+    if (esp_ota_get_partition_description(s_ota_part, &got) != ESP_OK ||
+        strncmp(got.project_name, self->project_name, sizeof(got.project_name)) != 0) {
+        ESP_LOGE(TAG, "OTA rejected: image project '%.*s' != '%s' (not GameBoy HiFi firmware)",
+                 (int)sizeof(got.project_name), got.project_name, self->project_name);
+        ota_error(8, "wrong firmware (project mismatch)");
+        // Leave s_ota_active set so ota_cleanup() treats this as a busy transfer
+        // and fires the FINISHED callback -- that is what makes app_sm leave
+        // ST_OTA and resume the audio pipeline (stopped for the flash). Same path
+        // a mid-OTA disconnect/abort already uses. The boot partition was never
+        // changed, so the current firmware keeps running with audio restored.
+        ota_cleanup(true);
+        return;
+    }
+
     e = esp_ota_set_boot_partition(s_ota_part);
     if (e != ESP_OK) { s_ota_active = false; ota_error(7, esp_err_to_name(e)); ota_cleanup(true); return; }
     s_ota_active = false;
