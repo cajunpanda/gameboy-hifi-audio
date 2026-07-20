@@ -133,11 +133,12 @@ enum {
     OTA_OP_BEGIN    = 0x01,  // [u32 size][u32 crc32] -> request transfer (device quiesces, then READY)
     OTA_OP_END      = 0x02,  // no args               -> finalize + reboot
     OTA_OP_ABORT    = 0x03,  // no args               -> abort + clean up
-    OTA_OP_GET_INFO = 0x04,  // no args               -> reply INFO (running slot + version)
+    OTA_OP_GET_INFO = 0x04,  // no args               -> reply INFO (running + previous slot)
     // Clip upload reuses this transport: same windowed chunking, and the two
     // transfers are mutually exclusive. Destination is the custom-startup slot.
     OTA_OP_CLIP_BEGIN = 0x05,  // [u32 size][u32 crc32] -> open the slot, reply READY
     OTA_OP_CLIP_END   = 0x06,  // no args               -> verify + commit, reply CLIP_DONE
+    OTA_OP_ROLLBACK   = 0x07,  // no args               -> boot the inactive slot (previous fw), reboot
 };
 // OTACTL status codes (device -> client, byte 0 of the notify):
 enum {
@@ -149,8 +150,8 @@ enum {
     OTA_ST_CLIP_DONE = 0x14,  // no args                 -> clip stored (no reboot)
 };
 
-// ERROR codes: 1-9 firmware OTA (8 = the shared stall abort), 20-30 clip
-// upload. Keep the ranges disjoint.
+// ERROR codes: 1-9 firmware OTA (8 = the shared stall abort / identity reject,
+// 9 = rollback refused), 20-30 clip upload. Keep the ranges disjoint.
 
 // The uploadable startup clip: one slot, overwritten each time. Written to a
 // temp path and renamed only once the transfer verifies.
@@ -776,21 +777,73 @@ static void clip_handle_end(void)
     config_link_quiet();
 }
 
-// OTACTL GET_INFO: reply "<version>|<running-slot>|<build-date>" so the UI can
-// show the installed firmware version (CONFIG_APP_PROJECT_VER) + which slot it
-// runs from + when it was built (the date distinguishes dev builds at the same
-// pinned version).
+// The inactive OTA slot's app descriptor, IF it holds an image we'd actually
+// boot: a valid ESP32 app whose project name matches ours (same identity gate as
+// ota_handle_end), and not one the bootloader has already invalidated. Returns
+// the partition and fills *desc; NULL when the slot is erased (factory-fresh
+// board), unreadable, foreign, or known-bad -- i.e. nothing safe to roll back to.
+// Shared by GET_INFO (to label/enable the button) and the rollback handler (to
+// gate the boot swap), so the UI can only ever offer a target the device accepts.
+static const esp_partition_t *rollback_target(esp_app_desc_t *desc)
+{
+    const esp_partition_t *other = esp_ota_get_next_update_partition(NULL);
+    if (!other) return NULL;
+    esp_app_desc_t got;
+    if (esp_ota_get_partition_description(other, &got) != ESP_OK) return NULL;
+    const esp_app_desc_t *self = esp_app_get_description();
+    if (strncmp(got.project_name, self->project_name, sizeof(got.project_name)) != 0)
+        return NULL;
+    // Refuse an image the bootloader marked INVALID/ABORTED (a failed OTA that got
+    // rolled back): booting it would fault or bootloop. A cable-flashed image has
+    // no otadata state entry (the call errors), which we treat as bootable.
+    esp_ota_img_states_t st;
+    if (esp_ota_get_state_partition(other, &st) == ESP_OK &&
+        (st == ESP_OTA_IMG_INVALID || st == ESP_OTA_IMG_ABORTED))
+        return NULL;
+    if (desc) *desc = got;
+    return other;
+}
+
+// OTACTL GET_INFO: reply "<version>|<running-slot>|<build-date>|<prev-version>|
+// <prev-build-date>" so the UI can show the installed firmware (version + slot +
+// build date; the date distinguishes dev builds at one pinned version) AND label
+// or disable the rollback button. The last two fields are empty when the inactive
+// slot has no valid previous image to revert to.
 static void ota_handle_get_info(void)
 {
     const esp_partition_t *run = esp_ota_get_running_partition();
     const esp_app_desc_t  *d   = esp_app_get_description();
-    uint8_t b[64];
+    esp_app_desc_t prev;
+    const esp_partition_t *pv = rollback_target(&prev);
+    uint8_t b[128];
     b[0] = OTA_ST_INFO;
-    int n = snprintf((char *)b + 1, sizeof(b) - 1, "%s|%s|%s",
-                     d ? d->version : "?", run ? run->label : "?", d ? d->date : "");
+    int n = snprintf((char *)b + 1, sizeof(b) - 1, "%s|%s|%s|%s|%s",
+                     d ? d->version : "?", run ? run->label : "?", d ? d->date : "",
+                     pv ? prev.version : "", pv ? prev.date : "");
     if (n < 0) n = 0;
     if (n > (int)sizeof(b) - 1) n = (int)sizeof(b) - 1;
     ota_notify(b, (uint16_t)(1 + n));
+}
+
+// OTACTL ROLLBACK: boot the other slot (the previous firmware). Dual OTA slots
+// keep the prior image resident, so revert is a boot-partition swap + reboot --
+// instant, no re-flash. It covers the gap the anti-brick auto-rollback can't: an
+// update that boots and confirms but misbehaves. Gated exactly like the button
+// via rollback_target(), so a factory-fresh board (erased second slot) or a
+// foreign image is refused. Refused while any transfer is in flight.
+static void ota_handle_rollback(void)
+{
+    if (s_ota_active || s_ota_pending || s_clip_active) { ota_error(9, "busy"); return; }
+    esp_app_desc_t desc;
+    const esp_partition_t *prev = rollback_target(&desc);
+    if (!prev) { ota_error(9, "no previous firmware"); return; }
+    esp_err_t e = esp_ota_set_boot_partition(prev);
+    if (e != ESP_OK) { ota_error(9, esp_err_to_name(e)); return; }
+    ESP_LOGW(TAG, "rollback -> boot %s (v%s, built %s); rebooting",
+             prev->label, desc.version, desc.date);
+    uint8_t done = OTA_ST_DONE; ota_notify(&done, 1);
+    vTaskDelay(pdMS_TO_TICKS(400));   // let the DONE notify flush before reset
+    esp_restart();
 }
 
 static void ota_handle_ctl(const uint8_t *v, uint16_t len)
@@ -804,6 +857,7 @@ static void ota_handle_ctl(const uint8_t *v, uint16_t len)
         ota_cleanup(true); clip_cleanup();
         break;
     case OTA_OP_GET_INFO:   ota_handle_get_info();        break;
+    case OTA_OP_ROLLBACK:   ota_handle_rollback();        break;
     case OTA_OP_CLIP_BEGIN: clip_handle_begin(v, len);    break;
     case OTA_OP_CLIP_END:   clip_handle_end();            break;
     default: ESP_LOGW(TAG, "OTA ctl: unknown op 0x%02x", v[0]); break;

@@ -802,6 +802,10 @@
               <button id="fwFlash" class="btn btn-primary" disabled>Flash firmware</button>
               <button id="fwAbort" class="btn btn-ghost" disabled>Cancel</button>
             </div>
+            <div id="fwRollbackRow" hidden style="margin-top:1rem;border-top:1px solid var(--line);padding-top:0.9rem">
+              <p class="note" id="fwRollbackInfo" style="margin-bottom:0.7rem">The previous firmware is still on the mod. You can switch back to it without re-flashing.</p>
+              <button id="fwRollback" class="btn btn-ghost">Roll back to previous</button>
+            </div>
           </div>
 
           <div class="card" id="console" hidden>
@@ -841,7 +845,7 @@ const VERSION  = 7;
 // Mirrors the enums in ble_config.c. Clip upload reuses the OTACTL/OTADATA
 // characteristics; the two are mutually exclusive, so `ota.kind` says which.
 const OTA = { BEGIN:0x01, END:0x02, ABORT:0x03, GET_INFO:0x04,
-              CLIP_BEGIN:0x05, CLIP_END:0x06,
+              CLIP_BEGIN:0x05, CLIP_END:0x06, ROLLBACK:0x07,
               READY:0x10, ACK:0x11, DONE:0x12, INFO:0x13, CLIP_DONE:0x14, ERROR:0x1f };
 
 let device, settingsChr, actionChr, otaCtlChr, otaDataChr, logChr, cmdChr, specChr;
@@ -850,6 +854,8 @@ let specL = null, specR = null, specSmL = null, specSmR = null, specPkL = null, 
 let specLastFrame = 0;    // timestamp of the last spectrum frame (drives the LIVE indicator)
 let otaImage = null;      // ArrayBuffer of the chosen .bin
 let ota = null;           // active transfer state
+let rollbackVer = '';     // version in the inactive slot, or '' if none to revert to
+let rollbackPending = false;  // ROLLBACK sent, awaiting reboot (or an ERROR if refused)
 let suppress = false;     // ignore control 'input' events while populating from the device
 let lastModeA = 0;        // read-only mode_a byte, preserved on write-back (firmware ignores it)
 let activeOutput = 'spk'; // which path the Tune tab is editing: 'spk' | 'hp' | 'bt'
@@ -1265,6 +1271,7 @@ function setOtaActive(active) {
   $('fwFlash').disabled = active || !otaImage;
   $('fwAbort').disabled = !active;
   $('fwFile').disabled = active;
+  $('fwRollback').disabled = active || !rollbackVer;   // no rollback mid-transfer
 }
 // Reset the firmware-update card to its idle state. Called on every (re)connect
 // so a card left mid-flash never persists: a successful OTA reboots the device
@@ -1283,6 +1290,10 @@ function resetOtaUi() {
   $('fwFile').disabled = false;
   $('fwFlash').disabled = true;  // re-enabled when a .bin is chosen
   $('fwAbort').disabled = true;
+  $('fwRollbackRow').hidden = true;   // re-shown by GET_INFO when a previous image exists
+  $('fwRollback').disabled = false;
+  rollbackPending = false;
+  rollbackVer = '';
 }
 // Both transfer kinds report here; the clip card has text, not a progress bar.
 function xferStatus(msg) {
@@ -1304,12 +1315,24 @@ const waitAck = () => new Promise((res) => ota.waiters.push(res));
 
 function onOtaStatus(dv) {
   const code = dv.getUint8(0);
-  if (code === OTA.INFO) {                       // reply to GET_INFO: "version|slot|builddate"
-    const [ver, slot, date] = new TextDecoder().decode(dvBytes(dv).slice(1)).split('|');
+  if (code === OTA.INFO) {          // GET_INFO: "version|slot|builddate|prevVersion|prevBuilddate"
+    const [ver, slot, date, prevVer, prevDate] =
+      new TextDecoder().decode(dvBytes(dv).slice(1)).split('|');
     $('fwRunning').textContent = ver ? `v${ver}` : '';
     $('fwInstalled').innerHTML = ver
       ? `Installed firmware: <b>v${ver}</b>${slot ? ' &middot; ' + slot : ''}${date ? ' &middot; built ' + date : ''}`
       : 'Installed firmware: not reported';
+    setRollbackTarget(prevVer, prevDate);   // '' (older firmware / fresh board) hides the control
+    return;
+  }
+  // A refused rollback (no valid previous image, or busy) arrives as ERROR with no
+  // transfer in flight; surface it here, before the transfer-only handling below.
+  if (code === OTA.ERROR && rollbackPending && !ota) {
+    const msg = dv.byteLength > 2 ? new TextDecoder().decode(dvBytes(dv).slice(2)) : '';
+    rollbackPending = false;
+    $('fwRollback').disabled = false;
+    $('fwStatus').textContent = 'Rollback failed: ' + (msg || 'refused by device');
+    log('rollback refused: ' + msg, 'err-t');
     return;
   }
   if (!ota) return;
@@ -1421,9 +1444,52 @@ async function abortOta() {
   log('update cancelled', 'dim-t');
 }
 
+// Show/label the rollback control from GET_INFO's previous-image fields. An empty
+// version means the inactive slot has no valid image to revert to (a factory-fresh
+// board, older firmware that predates rollback, or an image the device would
+// refuse), so the control stays hidden.
+function setRollbackTarget(ver, date) {
+  rollbackVer = ver || '';
+  const row = $('fwRollbackRow');
+  if (!rollbackVer) { row.hidden = true; return; }
+  row.hidden = false;
+  $('fwRollbackInfo').innerHTML =
+    `The previous firmware is still on the mod: <b>v${rollbackVer}</b>` +
+    `${date ? ' &middot; built ' + date : ''}. Switch back to it without re-flashing.`;
+  $('fwRollback').textContent = `Roll back to v${rollbackVer}`;
+  $('fwRollback').disabled = false;
+}
+
+// Boot the inactive slot (the previous firmware). No transfer: the device just
+// swaps the boot partition and reboots, so the refreshed "Installed firmware" line
+// on reconnect is the confirmation. A refused rollback comes back as an ERROR
+// notify (handled in onOtaStatus).
+async function rollbackFw() {
+  if (!otaCtlChr || !rollbackVer) return;
+  const ok = confirm(
+    `Roll back to firmware v${rollbackVer}?\n\n` +
+    `The mod reboots into the previous version. If that build uses an older ` +
+    `settings format, your EQ, volume and other preferences may reset to defaults ` +
+    `(Bluetooth pairings are kept). You can flash forward again anytime.`);
+  if (!ok) return;
+  try {
+    rollbackPending = true;
+    $('fwRollback').disabled = true;
+    $('fwStatus').textContent =
+      `Rolling back to v${rollbackVer}. The mod is rebooting — reconnect in a moment.`;
+    log(`rollback to v${rollbackVer} requested`, 'dim-t');
+    await otaCtlChr.writeValue(new Uint8Array([OTA.ROLLBACK]));
+  } catch (e) {
+    // The device usually reboots and drops the link before/around the write
+    // resolving — that throw is the expected success path, same as a flash END.
+    log('rollback sent; device rebooting', 'ok-t');
+  }
+}
+
 $('fwFile').addEventListener('change', (e) => onFwFile(e.target.files[0]));
 $('fwFlash').onclick = startOta;
 $('fwAbort').onclick = abortOta;
+$('fwRollback').onclick = rollbackFw;
 {
   const drop = $('fwDrop');
   ['dragenter', 'dragover'].forEach((ev) =>
@@ -1677,6 +1743,7 @@ async function setupServices(svc) {
     $('fwInstalled').textContent = 'Installed firmware: (this build predates OTA)';
     $('fwDrop').style.display = 'none';
     $('fwFlash').disabled = true;
+    $('fwRollbackRow').hidden = true;
     log('firmware update not available on this device', 'dim-t');
   }
 
