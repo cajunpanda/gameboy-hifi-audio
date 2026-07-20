@@ -60,7 +60,7 @@ menu "GameBoy HiFi Audio"
 
         config GBHIFI_MODE_EXIT_MS
             int "Mode A exit hold (milliseconds)"
-            default 9000
+            default 3000
             range 500 15000
             help
                 Hold the Connect/Pair button this long to leave Mode A (the
@@ -68,8 +68,9 @@ menu "GameBoy HiFi Audio"
                 DSP/SFX path is stopped in bypass), so this hold fires at the
                 deadline rather than on release: the user can't hear how long
                 they've held, and the returning DSP audio plus "full mode" chime
-                are the confirmation. Defaults to 9 s to match the mode-toggle
-                rung that enters Mode A. Seeds settings.hold_mode_exit_ms.
+                are the confirmation. Kept short (3 s) so the user isn't holding
+                blind for long -- the return chime lands soon after the deadline.
+                Seeds settings.hold_mode_exit_ms.
 
         config GBHIFI_DEBOUNCE_MS
             int "Button debounce interval (milliseconds)"

@@ -45,7 +45,7 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 # Pinned here rather than from git-describe. Keep it in lockstep with the release
 # tag (minus the leading 'v'): bump this, delete sdkconfig.esp32dev, rebuild.
 CONFIG_APP_PROJECT_VER_FROM_CONFIG=y
-CONFIG_APP_PROJECT_VER="1.0.0"
+CONFIG_APP_PROJECT_VER="1.1.0"
 
 # OTA rollback / anti-brick. A freshly OTA'd image boots in PENDING_VERIFY; main.c
 # marks it valid once init completes, so an image that panics during init is

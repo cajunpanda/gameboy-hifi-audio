@@ -28,6 +28,7 @@
 #include "freertos/timers.h"
 
 #include "driver/gpio.h"
+#include "esp_attr.h"
 #include "esp_log.h"
 #include "esp_rom_serial_output.h"
 #include "esp_sleep.h"
@@ -129,6 +130,18 @@ static TimerHandle_t s_pairing_to_t = NULL;  // pairing-mode session give-up
 // Boot-mode decision handed down from main.c (settings + reset reason + CP-hold);
 // true means drop straight into Mode A at boot (main.c also skipped BT init for it).
 static bool          s_boot_into_mode_a = false;
+
+// "Full mode" return chime, carried across the mode-change reboot. A mode switch
+// is done by esp_restart() (see app_sm_switch_mode), which tears down the audio
+// pipeline; Mode A also runs with the DSP + SFX path down. So the cue that used to
+// play as Mode A handed back to Mode B can't be voiced in the outgoing image -- it
+// has to fire on the *next* boot, once the pipeline is alive again. We arm this
+// magic in RTC noinit RAM just before the switch-to-B restart; the Mode B boot
+// consumes it and chimes. RTC noinit survives a software reset but scrambles on a
+// real power-off, and we additionally gate the consume on ESP_RST_SW, so only a
+// mode-change reboot arms it -- never a battery change or cold power-on.
+#define MODE_RETURN_MAGIC 0x4D6F6442u    // 'ModB' -- armed => chime on next boot
+static RTC_NOINIT_ATTR uint32_t s_mode_return_chime;
 
 static app_state_t s_state = ST_STANDBY;
 
@@ -1250,10 +1263,12 @@ static void mode_a_run(void)
             // R-button press. Time the hold awake; exit to Mode B the instant it
             // reaches the threshold (fire at deadline, not on release). Mode A has
             // no chime menu, so the user can't hear how long they've held; exiting
-            // at the deadline gives a definite cue (DSP audio + the "full mode"
-            // chime return). A shorter release is a benign tap: fall through and
-            // re-sleep. buttons.c emission is suppressed for the whole Mode A
-            // session, so the still-held button can't fire a stray action.
+            // at the deadline gives a definite cue -- the reboot lands in Mode B and
+            // voices the "full mode" return chime once the DSP path is alive (see
+            // app_sm_switch_mode + mode_return_chime_pending). A shorter release is a
+            // benign tap: fall through and re-sleep. buttons.c emission is suppressed
+            // for the whole Mode A session, so the still-held button can't fire a
+            // stray action.
             if (mode_a_button_hold()) {
                 ESP_LOGI(TAG, "Mode A: R held to threshold; rebooting into Mode B");
                 app_sm_switch_mode(false);   // save B + reboot; does not return
@@ -1261,30 +1276,21 @@ static void mode_a_run(void)
         }
     }
 
-    // Disarm the wake sources so they don't linger into the awake states.
-    esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
-    esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_EXT0);
-    esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_EXT1);
+    // Unreachable: the loop only ever leaves Mode A by rebooting into the target
+    // mode (app_sm_switch_mode -> esp_restart, above), so control never falls out
+    // here. exit_mode_a is kept as the loop's structural condition.
+}
 
-    // Arming ext0/ext1 routed GPIO34/35 through the RTC mux; reclaim them for
-    // the digital edge ISRs so buttons.c works again in Mode B.
-    buttons_refresh_gpio();
-
-    // Reset any hold buttons.c silently timed during the suppressed window, then
-    // flush the SM queue, then re-enable emission. Order matters: emission stays
-    // off until buttons.c is back in a released/idle state, so the exit hold can't
-    // fire a stray action (e.g. re-toggle the mode).
-    buttons_cancel_hold();
-    xQueueReset(s_evq);
-    buttons_set_emit_enabled(true);
-
-    // Exit: enter(ST_STANDBY) runs the ST_MODE_A exit-side cleanup (resume the
-    // pipeline, restore the DSP codec + both routing) and re-arms the reconnect
-    // campaign on the still-up radio. Then a "full mode" cue, now that the DSP path
-    // (and SFX) is alive again.
-    enter(ST_STANDBY);
-    CUE(SFX_SYNTH_MODE);
-    ESP_LOGI(TAG, "Mode A exited; Mode B / STANDBY");
+// True exactly once on the boot that follows a switch-to-Mode-B reboot: the
+// outgoing image armed the magic before esp_restart(). Consumed (cleared) on read
+// so the chime fires a single time. Gated on a software reset so RTC garbage left
+// by a cold power-on can't trigger a spurious cue.
+static bool mode_return_chime_pending(void)
+{
+    bool pending = (esp_reset_reason() == ESP_RST_SW &&
+                    s_mode_return_chime == MODE_RETURN_MAGIC);
+    s_mode_return_chime = 0;
+    return pending;
 }
 
 // ---- SM task --------------------------------------------------------------
@@ -1334,6 +1340,15 @@ static void sm_task(void *arg)
         ESP_LOGI(TAG, "boot: BT auto-connect off; waiting for Connect/Pair hold");
         s_boot_arrival = false;
         enter(ST_LOCAL_ONLY);
+    }
+
+    // "Full mode" return cue: if this Mode B boot is the tail of a switch from
+    // Mode A, voice it now that the DSP + SFX path is up (main.c stays silent on a
+    // software reset, so the cue channel is clear). The Mode A boot branch above
+    // never returns, so this only runs on a Mode B boot.
+    if (mode_return_chime_pending()) {
+        ESP_LOGI(TAG, "Mode B boot: full-mode return chime (returned from Mode A)");
+        CUE(SFX_SYNTH_MODE);
     }
 
     for (;;) {
@@ -1450,6 +1465,10 @@ void app_sm_switch_mode(bool to_mode_a)
     if (s.mode_a == to_mode_a) return;   // already the active mode
     settings_set_mode_a(to_mode_a);
     settings_commit();                   // land the boot in the target mode
+    // Arm the "full mode" return chime for the next boot when we're heading back to
+    // Mode B (the DSP path is down here and across the reboot, so it can't play now).
+    // Switching TO Mode A stays silent -- Mode A is the BT-less battery mode.
+    s_mode_return_chime = to_mode_a ? 0 : MODE_RETURN_MAGIC;
     ESP_LOGI(TAG, "mode -> %c; rebooting into it", to_mode_a ? 'A' : 'B');
     esp_rom_output_tx_wait_idle(CONFIG_ESP_CONSOLE_UART_NUM);  // flush the log line
     esp_restart();

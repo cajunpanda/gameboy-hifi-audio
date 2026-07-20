@@ -129,6 +129,14 @@ static void gate_cp_wake(void)
 // bt_a2d_init.
 static void maybe_factory_reset(void)
 {
+    // Only on a true power cycle (GBA rail applied). A software reset that happens
+    // to leave the button held must NOT count -- notably the Mode A -> B exit,
+    // which reboots the instant the R-hold hits its threshold, with the button
+    // still down. Without this gate the user, still holding R and waiting for the
+    // "full mode" chime, would slide straight into the factory-reset countdown.
+    if (esp_reset_reason() != ESP_RST_POWERON) {
+        return;
+    }
     if (gpio_get_level(PIN_CP_BUTTON) != 0) {
         return;  // button not held at boot
     }
