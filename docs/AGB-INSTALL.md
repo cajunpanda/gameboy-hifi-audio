@@ -10,6 +10,17 @@ the GBA mainboard and fine-pitch soldering. If you are not comfortable with that
 have it done by someone who is. The changes are permanent: the mod becomes the
 console's audio system.
 
+## Video walkthrough
+
+A video of the flex install, start to finish. Watch it before you begin, then
+follow the written steps below as you work.
+
+<p align="center">
+  <a href="https://youtu.be/mPUGNb_kJ9I">
+    <img src="https://img.youtube.com/vi/mPUGNb_kJ9I/maxresdefault.jpg" alt="Watch: Game Boy Advance HiFi Audio Mod Flex Install" width="600">
+  </a>
+</p>
+
 ## What you need
 
 - An assembled main board and flex.
@@ -70,26 +81,12 @@ works.
 ## Connect the boards and the speaker
 
 1. Connect the flex to the main board through the flat-flex connector.
-2. Solder the speaker to the main board. The mod's own amplifier drives it.
+2. Reattach the GBA's own speaker — the one you removed from the mainboard — to
+   the mod PCB's `SPK+` / `SPK-` pads, not back to the GBA mainboard. The mod's
+   own amplifier drives it.
 3. Fold the flex as designed and secure the main board inside the shell.
 
 <!-- photo: flex connected, speaker wired, board secured -->
-
-### Choosing the speaker
-
-The speaker is an off-PCB accessory (not in the schematic BOM). It solders to the
-main board's `SPK+` / `SPK-` pads (J5 / J6). Any 23 mm 8 Ω driver fits the
-footprint; the choice that matters is **efficiency**, because U4 (PAM8302A) runs
-on the 3.3 V rail and delivers only ~0.5 W, so a high-sensitivity driver is what
-buys usable, clean volume. Do not go below 4 Ω (the amp's minimum load).
-
-Recommended parts (all 23 mm, 8 Ω, NdFeB):
-
-| Role          | Part                     | Size            | Sensitivity       | Notes                                                                                                             |
-| ------------- | ------------------------ | --------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------- |
-| Primary       | PUI Audio `AS02308MR-T`  | Ø22.5 × 7.15 mm | 97 dB @ 1 W/0.1 m | PEN cone, solder pads. **Fit-test the 7.15 mm height** — tight in the AGB shell (a known-good speaker is 6.5 mm). |
-| 2nd source    | Same Sky `CMS-2207-18SP` | Ø22.5 × 7.0 mm  | 97 dB @ 1 W/0.1 m | Spec-identical drop-in for the PUI; use whichever is in stock. Same fit caveat.                                   |
-| Slim fallback | Soberton `SP-2305L`      | Ø23 × 5.0 mm    | 89 dB             | 70 mm flying leads (suit the SPK+/SPK- wiring). Use if 7 mm fouls the shell; ~5 dB less efficient.                |
 
 ## First firmware flash
 
