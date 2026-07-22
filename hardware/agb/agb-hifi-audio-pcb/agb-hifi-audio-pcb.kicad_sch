@@ -21245,7 +21245,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "FH12A-12S-0.5SH(55)"
+		(property "Value" "AFC07-S12ECA-00"
 			(at 275.082 229.362 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -21256,7 +21256,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "project_footprints:HIROSE_FH12A-12S-0.5SH_55_"
+		(property "Footprint" "project_footprints:FPC-SMD_12P-P0.50_AFC07-S12ECA-00"
 			(at 293.37 210.82 0)
 			(hide yes)
 			(show_name no)
@@ -21267,7 +21267,7 @@
 				)
 			)
 		)
-		(property "Datasheet" ""
+		(property "Datasheet" "https://datasheet.lcsc.com/datasheet/pdf/e6db9dca17f20fc619a0f13e17b23bd3.pdf"
 			(at 293.37 210.82 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -21287,7 +21287,7 @@
 				)
 			)
 		)
-		(property "MPN" "FH12A-12S-0.5SH(55)"
+		(property "MPN" "AFC07-S12ECA-00"
 			(at 295.91 215.8999 0)
 			(hide yes)
 			(show_name no)
@@ -21299,7 +21299,7 @@
 				(justify left)
 			)
 		)
-		(property "Note" "Top-contact FH12A; pin 1 mirrored for the folded flex tail."
+		(property "Note" "Top-contact 0.5mm ZIF; pin 1 mirrored for the folded flex tail. Swapped from Hirose FH12A-12S-0.5SH(55) 2026-07-21 (no JLCPCB stock); flex-tail mating spec verified against AFC07 datasheet."
 			(at 296.672 205.74 0)
 			(hide yes)
 			(show_name no)
@@ -21311,7 +21311,7 @@
 				(justify left)
 			)
 		)
-		(property "LCSC" "C596811"
+		(property "LCSC" "C262585"
 			(at -101.6 110.49 0)
 			(hide yes)
 			(show_name no)
@@ -21322,7 +21322,7 @@
 				)
 			)
 		)
-		(property "Manufacturer" "Hirose Electric"
+		(property "Manufacturer" "JUSHUO"
 			(at -101.6 110.49 0)
 			(hide yes)
 			(show_name no)
@@ -21333,7 +21333,7 @@
 				)
 			)
 		)
-		(property "DigiKey" "HFK112CT-ND"
+		(property "DigiKey" ""
 			(at -101.6 110.49 0)
 			(hide yes)
 			(show_name no)

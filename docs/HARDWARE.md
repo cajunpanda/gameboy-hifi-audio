@@ -43,13 +43,17 @@ active parts are:
 | U3   | TPS61021A               | Boost converter, battery to 3.3 V                          |
 | U4   | PAM8302A                | Mono Class-D amplifier for the internal speaker            |
 | U5   | LP5907MFX-3.0           | Low-noise LDO for the codec's analog supply                |
-| FPC1 | FH12A-12S-0.5SH         | 12-pin flat-flex connector for the flex                    |
+| FPC1 | AFC07-S12ECA-00         | 12-pin flat-flex connector for the flex                    |
 
 The ES8388 is a QFN-28 and is not hand-solderable in the usual sense. Plan on a
 stencil and reflow, or hot air. The ESP32 module needs the same treatment: its
 pads sit under the module's edge rather than as exposed castellations, so an iron
 cannot reach them all. Its pitch is coarser than the codec's, so it is the more
 forgiving of the two, but it is still a reflow or hot-air part.
+
+FPC1 is a JLCPCB-stocked part (LCSC C262585). It replaced the Hirose
+FH12A-12S-0.5SH, which mates the same flex but uses a different fitting-nail
+land pattern, so the Hirose only fits board revisions before 1.1.
 
 ### Full bill of materials
 
@@ -78,7 +82,7 @@ LCSC, and DigiKey part numbers for every line. 26 lines, 60 pieces.
 | R19                            | 1   | 33 Ω                           | 0402              |
 | L1                             | 1   | 0.47 µH (power inductor)       | 2.5 × 2.0 mm      |
 | FB1                            | 1   | 600 Ω @ 100 MHz (ferrite bead) | 0402              |
-| FPC1                           | 1   | FH12A-12S-0.5SH                | 12-pin FFC        |
+| FPC1                           | 1   | AFC07-S12ECA-00                | 12-pin FFC        |
 | U1                             | 1   | ESP32-PICO-MINI-02-N8R2        | SMD module        |
 | U2                             | 1   | ES8388                         | QFN-28 (4 × 4 mm) |
 | U3                             | 1   | TPS61021A                      | WSON-8 (2 × 2 mm) |
