@@ -2,6 +2,7 @@
 
 #include "sdkconfig.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #include "freertos/FreeRTOS.h"
@@ -97,6 +98,60 @@ static const gbhifi_settings_t s_defaults = {
     .hold_mode_exit_ms = CONFIG_GBHIFI_MODE_EXIT_MS,
 };
 
+// Bring a blob saved under an older layout up to the current one. load_blob()
+// has already copied in the fields both layouts share, and fields past the old
+// blob's end hold their defaults. Each step defaults the fields its version
+// added (an old blob's tail padding can overlap them) or converts a value whose
+// meaning changed. Steps run oldest first, so any supported blob catches up in
+// one pass. Add one per layout bump:
+//     if (from < 15) s->new_field = s_defaults.new_field;
+static void migrate(gbhifi_settings_t *s, uint16_t from)
+{
+    (void)s;
+    (void)from;
+}
+
+// Read the saved blob into *out, from any layout version since
+// GBHIFI_SETTINGS_MIN_VERSION. An older blob is migrated forward. A newer one
+// (after a rollback) keeps the fields this firmware knows and drops the rest.
+// false = no usable blob; the caller keeps the defaults.
+static bool load_blob(nvs_handle_t h, gbhifi_settings_t *out)
+{
+    size_t len = 0;
+    esp_err_t err = nvs_get_blob(h, NVS_KEY, NULL, &len);
+    if (err != ESP_OK || len < sizeof(out->version)) {
+        ESP_LOGI(TAG, "no saved settings (%s) - defaults", esp_err_to_name(err));
+        return false;
+    }
+    uint8_t *buf = malloc(len);
+    if (!buf) return false;
+    bool ok = false;
+    err = nvs_get_blob(h, NVS_KEY, buf, &len);
+    if (err == ESP_OK) {
+        uint16_t ver;
+        memcpy(&ver, buf, sizeof(ver));
+        if (ver >= GBHIFI_SETTINGS_MIN_VERSION) {
+            *out = s_defaults;
+            memcpy(out, buf, len < sizeof(*out) ? len : sizeof(*out));
+            if (ver < GBHIFI_SETTINGS_VERSION) migrate(out, ver);
+            out->version = GBHIFI_SETTINGS_VERSION;
+            ok = true;
+            if (ver == GBHIFI_SETTINGS_VERSION) {
+                ESP_LOGI(TAG, "loaded settings from NVS");
+            } else {
+                ESP_LOGI(TAG, "loaded settings from NVS (saved as layout v%u, now v%u)",
+                         ver, GBHIFI_SETTINGS_VERSION);
+            }
+        } else {
+            ESP_LOGW(TAG, "saved settings layout v%u is too old to load - defaults", ver);
+        }
+    } else {
+        ESP_LOGW(TAG, "settings read failed (%s) - defaults", esp_err_to_name(err));
+    }
+    free(buf);
+    return ok;
+}
+
 // Re-clamp every field. Defends against a corrupt/forward-version NVS blob and
 // keeps the DSP from ever seeing an out-of-range coefficient input.
 static void sanitise(gbhifi_settings_t *s)
@@ -148,16 +203,9 @@ esp_err_t settings_init(void)
     esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &h);
     if (err == ESP_OK) {
         gbhifi_settings_t blob;
-        size_t len = sizeof(blob);
-        err = nvs_get_blob(h, NVS_KEY, &blob, &len);
-        if (err == ESP_OK && len == sizeof(blob) &&
-            blob.version == GBHIFI_SETTINGS_VERSION) {
+        if (load_blob(h, &blob)) {
             sanitise(&blob);
             s_cur = blob;
-            ESP_LOGI(TAG, "loaded settings from NVS");
-        } else {
-            ESP_LOGI(TAG, "no usable NVS blob (err=%s, ver/len mismatch) - defaults",
-                     esp_err_to_name(err));
         }
         nvs_close(h);
     } else {

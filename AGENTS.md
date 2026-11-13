@@ -51,6 +51,11 @@ delete plus a rebuild.
   reconnect to the periodic timer, or Bluedroid crashes during teardown.
 - `settings.c` is the only seam control surfaces touch. The console and the BLE
   server call `settings_*`/`sfx_*` and never touch the audio path. Keep that.
+- Saved settings must survive firmware updates. The NVS settings layout is
+  append-only: new fields go at the end of `gbhifi_settings_t` with a
+  `migrate()` step in `settings.c`. Exposing an existing setting over BLE bumps
+  only `SETTINGS_WIRE_VERSION` in `ble_config.c`, never the NVS layout version.
+  The rules are at the top of `settings.h`.
 - `pinmap.h` is the single source of truth for GPIOs. Do not hard-code pin
   numbers anywhere else.
 - `pio run -t upload` does not flash the LittleFS clip image. A build bakes

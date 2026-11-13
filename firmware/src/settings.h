@@ -13,11 +13,21 @@
 // snapshot per block and recomputes filter coefficients only when `generation`
 // changes.
 //
-// Persisted as a single versioned blob in NVS (namespace "gbhifi_cfg", key
-// "dsp"). Bump GBHIFI_SETTINGS_VERSION when the struct layout changes; an
-// older/absent blob falls back to the Kconfig-seeded defaults.
+// Persisted as a single blob in NVS (namespace "gbhifi_cfg", key "dsp").
+// GBHIFI_SETTINGS_VERSION is the stored layout version. The layout is
+// append-only, so saved settings survive firmware updates and rollbacks:
+//   - Add a field only at the end of gbhifi_settings_t, bump the version, and
+//     give the field its default for older blobs in settings.c migrate().
+//   - Never move, resize, or reuse an existing field. A retired field stays as
+//     a placeholder.
+//   - Changing what a stored value means also needs a migrate() step.
+// A change that only adds a control surface for an existing field (console,
+// BLE) does not touch the layout. The BLE wire format has its own version in
+// ble_config.c. Blobs older than GBHIFI_SETTINGS_MIN_VERSION predate these
+// rules and load as defaults.
 
-#define GBHIFI_SETTINGS_VERSION 14
+#define GBHIFI_SETTINGS_VERSION     14
+#define GBHIFI_SETTINGS_MIN_VERSION 14
 
 // Which boot chime the mod voices on a genuine power-on. Clip modes stream
 // /clips/<name>.gsfx; STARTUP_OFF plays nothing and leaves the live GBA
@@ -51,7 +61,7 @@ typedef enum {
 } batt_chem_t;
 
 typedef struct {
-    uint16_t version;          // == GBHIFI_SETTINGS_VERSION
+    uint16_t version;          // layout version of the saved blob; must stay first
     uint8_t  speaker_vol_pct;  // local-speaker digital volume, 0..100
     uint8_t  bt_vol_pct;       // Bluetooth digital volume, 0..100 (100 = unity)
 
@@ -152,6 +162,8 @@ typedef struct {
     // Plain hold to leave Mode A (no menu, since the DSP/SFX path is stopped in
     // bypass so the menu chimes can't play). Timed by app_sm's light-sleep loop.
     uint16_t hold_mode_exit_ms;
+
+    // New fields go here, at the end (see the layout rules above).
 } gbhifi_settings_t;
 
 // Load the blob from NVS, or seed Kconfig defaults if absent / older version.

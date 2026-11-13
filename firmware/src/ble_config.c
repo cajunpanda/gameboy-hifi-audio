@@ -108,7 +108,12 @@ static const uint8_t DIAG_UUID128[16] = {
 // implemented, so it must fit one PDU even on a small negotiated MTU.
 #define SETTINGS_WIRE_LEN 64
 #define SETTINGS_WIRE_MIN 28
-//   [0..1] version u16   [2] spk_vol   [3] bt_vol
+// Wire schema version, sent in [0..1]. Bump it when a field is added below. It
+// is independent of the NVS layout version (GBHIFI_SETTINGS_VERSION): exposing
+// an existing setting over BLE bumps this one only. Firmware before wire
+// version 15 sent its NVS layout version here, which the notes below match.
+#define SETTINGS_WIRE_VERSION 15
+//   [0..1] wire version u16   [2] spk_vol   [3] bt_vol
 //   [4] eq_en [5] eq_bass [6] eq_mid [7] eq_treble (i8)  Speaker EQ
 //   [8] eq_bt_en [9] eq_bt_bass [10] eq_bt_mid [11] eq_bt_treble (i8)  Bluetooth EQ
 //   [12] sfx_en [13] sfx_level (i8)
@@ -127,7 +132,9 @@ static const uint8_t DIAG_UUID128[16] = {
 //   ---- added in version 14 ----
 //   [35..36] nr_lpf_hz u16 (reconstruction low-pass corner, 0 = off)
 //   [37] nr_lpf_order (Butterworth order 2/4/6)
-//   [38..63] reserved, zero
+//   ---- added in version 15 ----
+//   [38] auto_connect (1 = reconnect to the paired sink on power-up)
+//   [39..63] reserved, zero
 
 // Action characteristic opcodes (byte 0 of the write).
 enum {
@@ -420,8 +427,8 @@ static void settings_to_wire(uint8_t *b)
 {
     gbhifi_settings_t s;
     settings_get(&s);
-    b[0]  = (uint8_t)(s.version & 0xff);
-    b[1]  = (uint8_t)(s.version >> 8);
+    b[0]  = (uint8_t)(SETTINGS_WIRE_VERSION & 0xff);
+    b[1]  = (uint8_t)(SETTINGS_WIRE_VERSION >> 8);
     b[2]  = s.speaker_vol_pct;
     b[3]  = s.bt_vol_pct;
     b[4]  = s.eq_enabled ? 1 : 0;
@@ -464,8 +471,10 @@ static void settings_to_wire(uint8_t *b)
     b[35] = (uint8_t)(s.nr_lpf_hz & 0xff);
     b[36] = (uint8_t)(s.nr_lpf_hz >> 8);
     b[37] = s.nr_lpf_order;
+    // ---- version 15: Bluetooth connect-on-boot policy (setting) ----
+    b[38] = s.auto_connect ? 1 : 0;
     // Reserved tail: zeroed so a UI can tell "field not set" from stale bytes.
-    memset(&b[38], 0, SETTINGS_WIRE_LEN - 38);
+    memset(&b[39], 0, SETTINGS_WIRE_LEN - 39);
 }
 
 // Apply a settings write through the validating setters (live, not persisted;
@@ -506,6 +515,8 @@ static void wire_to_settings(const uint8_t *b, uint16_t len)
         settings_set_nr(cur.nr_hpf_hz, hz, cur.nr_notch_hz, cur.nr_notch_q);
         settings_set_nr_lpf_order(b[37]);
     }
+    // ---- version 15: Bluetooth connect-on-boot policy ----
+    if (len > 38) settings_set_auto_connect(b[38] != 0);
 }
 
 static void do_action(const uint8_t *v, uint16_t len)

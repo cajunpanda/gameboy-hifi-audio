@@ -350,6 +350,7 @@
                font-family: var(--font-mono); font-size: 0.68rem; color: var(--faint);
                text-transform: uppercase; letter-spacing: 0.11em; }
   #lpfCard.unsupported .ctl { opacity: 0.45; }
+  #autoConnectCard.unsupported .row { opacity: 0.45; }
 
   /* ---- slider control ---- */
   .ctl { margin-block: 0.7rem; }
@@ -770,6 +771,17 @@
             </div>
           </div>
 
+          <div class="card" id="autoConnectCard">
+            <div class="card-head"><h2>Bluetooth</h2></div>
+            <div class="row">
+              <label>Reconnect on power up
+                <span class="sub">On: the mod reconnects to your paired headphones or speaker when the console powers on. Off: it waits until you hold the R button. Takes effect the next time you power on.</span></label>
+              <input type="checkbox" class="sw" id="autoConnect" aria-label="Reconnect on power up">
+            </div>
+            <p class="note" id="autoConnectNote" hidden>Needs a firmware update. Use the update card on the
+              System tab.</p>
+          </div>
+
           <div class="card">
             <div class="card-head"><h2>Sound cues</h2><input type="checkbox" class="sw" id="sfxEn" aria-label="Enable sound cues"></div>
             <div class="ctl">
@@ -889,7 +901,7 @@ const CMD      = '5a4d0006-1f2e-4c6b-9a8f-0102030405aa';  // write (console comm
 const SPECTRUM = '5a4d0007-1f2e-4c6b-9a8f-0102030405aa';  // notify (stereo audio spectrum: L bytes then R bytes)
 const DIAG     = '5a4d0008-1f2e-4c6b-9a8f-0102030405aa';  // read + notify (install check: VBAT/VOL/PAIR/HP)
 const WIRE_LEN = 64;
-const VERSION  = 7;
+const VERSION  = 15;
 // OTA opcodes/status, must match the firmware BLE config.
 // Mirrors the enums in ble_config.c. Clip upload reuses the OTACTL/OTADATA
 // characteristics; the two are mutually exclusive, so `ota.kind` says which.
@@ -928,7 +940,7 @@ const banner = (m) => { const b = $('banner'); b.textContent = m; b.classList.ad
 // first reserved offset, existing ones never move. Short writes and short reads
 // are both tolerated, so either side can be older. Keep in lockstep with
 // SETTINGS_WIRE_LEN in firmware/src/ble_config.c.
-//   [0..1] version u16 [2] spkVol [3] btVol [4] eqEn [5..7] eq i8 x3
+//   [0..1] wire version u16 (SETTINGS_WIRE_VERSION) [2] spkVol [3] btVol [4] eqEn [5..7] eq i8 x3
 //   [8] eqBtEn [9..11] eqBt i8 x3 [12] sfxEn [13] sfxLevel i8
 //   [14] modeA (read-only status) [15] bootModeA (persist Mode A across power cycles)
 //   [16..17] holdConnect u16 [18..19] holdPair u16 [20..21] holdMode u16 [22..23] holdExit u16
@@ -937,14 +949,15 @@ const banner = (m) => { const b = $('banner'); b.textContent = m; b.classList.ad
 //   [30] battChem (0=alkaline 1=nimh 2=lipo-reg)
 //   [31..32] battVbat u16 mV (read-only) [33] battBand (read-only) [34] battPct 0..100/0xFF (read-only)
 //   [35..36] nrLpfHz u16 (smoothing filter corner, 0=off; v14+) [37] nrLpfOrder (2/4/6; v14+)
-//   [38..63] reserved
+//   [38] autoConnect (reconnect to the paired sink on power up; v15+)
+//   [39..63] reserved
 const FIELDS = [   // writable u8 ('u') / i8 ('i') / bool ('b')
   ['spkVol',2,'u'], ['btVol',3,'u'],
   ['eqEn',4,'b'], ['eqBass',5,'i'], ['eqMid',6,'i'], ['eqTreble',7,'i'],
   ['eqHpEn',24,'b'], ['eqHpBass',25,'i'], ['eqHpMid',26,'i'], ['eqHpTreble',27,'i'],
   ['eqBtEn',8,'b'], ['eqBtBass',9,'i'], ['eqBtMid',10,'i'], ['eqBtTreble',11,'i'],
   ['sfxEn',12,'b'], ['sfxLevel',13,'i'], ['startupMode',28,'u'],
-  ['bootModeA',15,'b'], ['battChem',30,'u'],
+  ['bootModeA',15,'b'], ['battChem',30,'u'], ['autoConnect',38,'b'],
 ];
 const HOLD_FIELDS = [   // writable u16 ('h')
   ['holdConnect',16], ['holdPair',18], ['holdMode',20], ['holdExit',22],
@@ -1017,6 +1030,11 @@ function decodeToControls(dv) {
   } else {
     $('lpfO').value = '';
   }
+  // Reconnect on power up: same version gate, a v14 blob carries a zero here.
+  const acSupported = dv.byteLength > 38 && dv.getUint16(0, true) >= 15;
+  $('autoConnectCard').classList.toggle('unsupported', !acSupported);
+  $('autoConnect').disabled = !acSupported;
+  $('autoConnectNote').hidden = acSupported;
   lastModeA = dv.getUint8(14);
   // Byte 29 is read-only status: whether /clips/startup-custom.gsfx exists.
   // Older firmware sends a shorter blob, so absent means "no custom clip".

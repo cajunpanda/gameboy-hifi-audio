@@ -63,8 +63,9 @@ gives up, and waits for you to hold R again, if it cannot get them back after a
 short while.
 
 If you prefer the mod to reconnect to your saved headphones automatically the
-moment you power on, that is available as a saved option. It is off by default so
-the radio stays quiet until you ask for it.
+moment you power on, turn on **Reconnect on power up** on the Device tab of the
+web config, then save. It is off by default so the radio stays quiet until you
+ask for it.
 
 ## Wired headphones and the speaker
 
@@ -195,8 +196,8 @@ search. If it still fails, do a factory reset and pair again.
 **It does not reconnect by itself when I turn the GBA on.**
 That is normal. The mod waits for you so the radio stays quiet until you want it.
 Hold R to the first chime (about 3 seconds) to reconnect your saved headphones.
-If you would rather it reconnect automatically at power-on, that can be turned on
-as a saved option.
+If you would rather it reconnect automatically at power-on, turn on **Reconnect
+on power up** on the Device tab of the web config, then save.
 
 **No sound from Bluetooth.**
 Check that you are in Full mode, not Battery saver. Battery saver does not

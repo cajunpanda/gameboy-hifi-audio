@@ -260,6 +260,12 @@ or `expf` in the audio task; the DSP uses lookup tables.
 is thread-safe, NVS-backed, and versioned, with a generation counter so the DSP
 recomputes coefficients only when something changes.
 
+Saved settings carry over between firmware versions, including a rollback. The
+stored layout is append-only: a new field goes at the end of the struct, and a
+`migrate()` step gives it a default when an older blob loads. A newer blob keeps
+the fields the running firmware knows. The BLE settings format has its own
+version, so exposing an existing setting to the web page needs no layout change.
+
 Control surfaces only ever call the `settings_*` and `sfx_*` API. They never
 touch the audio path. There are two:
 
