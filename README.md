@@ -7,8 +7,8 @@ and it also drives the GBA's built-in speaker and wired headphone jack itself,
 with onboard EQ, volume, and sound effects.
 
 <p align="center">
-  <a href="https://youtu.be/aRh9ZIPrqOQ">
-    <img src="https://img.youtube.com/vi/aRh9ZIPrqOQ/maxresdefault.jpg" alt="Watch: I Fixed the GBA's Audio" width="600">
+  <a href="https://youtu.be/VGivdlwF4ew">
+    <img src="docs/images/overview-title-card.png" alt="Watch: I Fixed the GBA's Audio" width="600">
   </a>
   <br>
   <sub>What the mod does, start to finish</sub>
